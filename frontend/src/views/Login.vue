@@ -1,0 +1,62 @@
+<script setup>
+import { ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { useAuthStore } from '../store/auth'
+
+const router = useRouter()
+const auth = useAuthStore()
+const username = ref('')
+const password = ref('')
+const error = ref('')
+const loading = ref(false)
+
+async function handleLogin() {
+  error.value = ''
+  loading.value = true
+  try {
+    await auth.login(username.value, password.value)
+    router.push('/')
+  } catch (e) {
+    error.value = e.response?.data?.error || '登录失败'
+  } finally {
+    loading.value = false
+  }
+}
+</script>
+
+<template>
+  <div class="min-h-screen bg-canvas flex items-center justify-center">
+    <div class="w-[360px] bg-surface-1 border border-hairline rounded-lg p-8">
+      <h1 class="text-xl font-semibold text-ink mb-1">FANET Platform</h1>
+      <p class="text-sm text-ink-subtle mb-6">无人机自组网集群管理平台</p>
+      <form @submit.prevent="handleLogin" class="space-y-4">
+        <div>
+          <label class="block text-xs text-ink-subtle mb-1.5">用户名</label>
+          <input
+            v-model="username"
+            type="text"
+            class="w-full h-9 px-3 bg-surface-2 border border-hairline rounded-md text-sm text-ink placeholder:text-ink-subtle focus:outline-none focus:border-primary transition-colors"
+            placeholder="admin"
+          />
+        </div>
+        <div>
+          <label class="block text-xs text-ink-subtle mb-1.5">密码</label>
+          <input
+            v-model="password"
+            type="password"
+            class="w-full h-9 px-3 bg-surface-2 border border-hairline rounded-md text-sm text-ink placeholder:text-ink-subtle focus:outline-none focus:border-primary transition-colors"
+            placeholder="password"
+          />
+        </div>
+        <p v-if="error" class="text-xs text-danger">{{ error }}</p>
+        <button
+          type="submit"
+          :disabled="loading"
+          class="w-full h-9 bg-primary hover:bg-primary-hover text-white text-sm font-medium rounded-md transition-colors disabled:opacity-50 cursor-pointer"
+        >
+          {{ loading ? '登录中...' : '登录' }}
+        </button>
+      </form>
+    </div>
+  </div>
+</template>
