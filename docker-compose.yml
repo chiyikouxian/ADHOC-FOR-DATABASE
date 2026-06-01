@@ -1,0 +1,89 @@
+# =============================================================
+# FANET 平台 — 本地开发中间件编排
+# 用法：docker compose up -d   （首次会自动建库+灌种子数据）
+# 前置：Docker Desktop（Windows）
+# 说明：PostgreSQL 关系核心 / TDengine 遥测时序 / Redis 缓存 / EMQX MQTT
+# 镜像标签可按需升级到最新 3.x / 5.x / 16.x
+# =============================================================
+name: fanet
+
+services:
+  # ---------- 关系/事务核心库 ----------
+  postgres:
+    image: postgres:16
+    container_name: fanet-postgres
+    environment:
+      POSTGRES_DB: ${PG_DB:-fanet}
+      POSTGRES_USER: ${PG_USER:-fanet_app}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-fanet_dev_pwd}
+      TZ: Asia/Shanghai
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      # 首次启动（数据目录为空）时按文件名顺序自动执行
+      - ./db/schema_pg.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./db/seed_pg.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_USER:-fanet_app} -d ${PG_DB:-fanet}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------- 遥测时序库 ----------
+  tdengine:
+    image: tdengine/tdengine:3.3.2.0
+    container_name: fanet-tdengine
+    environment:
+      TZ: Asia/Shanghai
+    ports:
+      - "6030:6030"   # 原生连接（taosc）
+      - "6041:6041"   # REST / taosAdapter（JDBC-RESTful 走这个）
+    volumes:
+      - td_data:/var/lib/taos
+      - td_log:/var/log/taos
+      # 时序 schema 不走自动初始化（TDengine 无 initdb.d 机制），首次手动执行：
+      # docker exec -i fanet-tdengine taos < db/schema_tdengine.sql
+      - ./db/schema_tdengine.sql:/tmp/schema_tdengine.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "taos -s 'show databases;' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------- 缓存 / Pub-Sub ----------
+  redis:
+    image: redis:7-alpine
+    container_name: fanet-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------- MQTT Broker（S3 遥测接入用，可后置）----------
+  emqx:
+    image: emqx/emqx:5.8
+    container_name: fanet-emqx
+    environment:
+      EMQX_NAME: fanet-emqx
+      EMQX_HOST: 127.0.0.1
+    ports:
+      - "1883:1883"     # MQTT
+      - "18083:18083"   # Dashboard（admin / public）
+    volumes:
+      - emqx_data:/opt/emqx/data
+      - emqx_log:/opt/emqx/log
+
+volumes:
+  pg_data:
+  td_data:
+  td_log:
+  redis_data:
+  emqx_data:
+  emqx_log:

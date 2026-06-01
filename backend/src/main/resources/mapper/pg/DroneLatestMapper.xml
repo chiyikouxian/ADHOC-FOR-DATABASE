@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.fanet.mapper.pg.DroneLatestMapper">
+
+    <!-- UPSERT：有则更新，无则插入（PostgreSQL ON CONFLICT） -->
+    <insert id="upsert">
+        INSERT INTO drone_latest (drone_id, ts, lat, lon, alt, battery_pct, rssi)
+        VALUES (#{droneId}, #{ts}, #{lat}, #{lon}, #{alt}, #{batteryPct}, #{rssi})
+        ON CONFLICT (drone_id) DO UPDATE SET
+            ts = EXCLUDED.ts,
+            lat = EXCLUDED.lat,
+            lon = EXCLUDED.lon,
+            alt = EXCLUDED.alt,
+            battery_pct = EXCLUDED.battery_pct,
+            rssi = EXCLUDED.rssi
+    </insert>
+
+</mapper>

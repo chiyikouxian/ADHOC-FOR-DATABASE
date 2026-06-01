@@ -1,0 +1,36 @@
+#!/bin/sh
+# Maven Wrapper bootstrap script
+# Downloads Maven if not present, then delegates to it
+set -e
+MAVEN_WRAPPER_JAR=".mvn/wrapper/maven-wrapper.jar"
+MAVEN_WRAPPER_PROPERTIES=".mvn/wrapper/maven-wrapper.properties"
+MAVEN_HOME="${HOME}/.m2/wrapper/dists"
+
+if [ ! -f "$MAVEN_WRAPPER_JAR" ]; then
+  WRAPPER_URL=$(grep 'wrapperUrl' "$MAVEN_WRAPPER_PROPERTIES" | cut -d'=' -f2-)
+  echo "Downloading Maven Wrapper from $WRAPPER_URL"
+  if command -v curl > /dev/null 2>&1; then
+    curl -sL -o "$MAVEN_WRAPPER_JAR" "$WRAPPER_URL"
+  elif command -v wget > /dev/null 2>&1; then
+    wget -q -O "$MAVEN_WRAPPER_JAR" "$WRAPPER_URL"
+  fi
+fi
+
+DIST_URL=$(grep 'distributionUrl' "$MAVEN_WRAPPER_PROPERTIES" | cut -d'=' -f2-)
+DIST_NAME=$(basename "$DIST_URL" .zip)
+MVN_HOME="$MAVEN_HOME/$DIST_NAME"
+
+if [ ! -d "$MVN_HOME" ]; then
+  echo "Downloading Maven from $DIST_URL"
+  mkdir -p "$MAVEN_HOME"
+  TMP_FILE=$(mktemp)
+  if command -v curl > /dev/null 2>&1; then
+    curl -sL -o "$TMP_FILE" "$DIST_URL"
+  elif command -v wget > /dev/null 2>&1; then
+    wget -q -O "$TMP_FILE" "$DIST_URL"
+  fi
+  unzip -q "$TMP_FILE" -d "$MAVEN_HOME"
+  rm -f "$TMP_FILE"
+fi
+
+exec "$MVN_HOME/bin/mvn" "$@"

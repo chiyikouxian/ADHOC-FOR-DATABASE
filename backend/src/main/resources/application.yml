@@ -1,0 +1,48 @@
+server:
+  port: 8080
+
+spring:
+  # 关闭 Spring Boot 自动配置单数据源（我们手动配双数据源）
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+
+  # Redis
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+
+# ---------- 双数据源配置 ----------
+datasource:
+  # PostgreSQL（关系/事务核心）
+  pg:
+    jdbc-url: jdbc:postgresql://${PG_HOST:127.0.0.1}:${PG_PORT:5432}/${PG_DB:fanet}
+    username: ${PG_USER:fanet_app}
+    password: ${PG_PASSWORD:change_me_in_real_env}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+
+  # TDengine（遥测时序，走 RESTful 接口 6041）
+  td:
+    jdbc-url: jdbc:TAOS-RS://${TD_HOST:127.0.0.1}:${TD_REST_PORT:6041}/fanet
+    username: ${TD_USER:root}
+    password: ${TD_PASSWORD:taosdata}
+    driver-class-name: com.taosdata.jdbc.rs.RestfulDriver
+    hikari:
+      maximum-pool-size: 15
+      minimum-idle: 3
+      connection-timeout: 30000
+
+# ---------- JWT ----------
+jwt:
+  secret: ${JWT_SECRET:dev-only-secret-change-in-prod-32chars!}
+  expiration-ms: 86400000  # 24h
+
+# ---------- MyBatis ----------
+mybatis:
+  configuration:
+    map-underscore-to-camel-case: true

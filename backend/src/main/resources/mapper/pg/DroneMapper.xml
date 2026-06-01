@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.fanet.mapper.pg.DroneMapper">
+
+    <select id="findAll" resultType="com.fanet.model.Drone">
+        SELECT * FROM v_drone_latest
+    </select>
+
+    <select id="findById" resultType="com.fanet.model.Drone">
+        SELECT * FROM v_drone_latest WHERE drone_id = #{droneId}
+    </select>
+
+    <select id="findByStatus" resultType="com.fanet.model.Drone">
+        SELECT * FROM v_drone_latest WHERE status = #{status}
+    </select>
+
+    <update id="updateStatus">
+        UPDATE drones SET status = #{status} WHERE drone_id = #{droneId}
+    </update>
+
+</mapper>

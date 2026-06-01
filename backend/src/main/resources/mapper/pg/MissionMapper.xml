@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.fanet.mapper.pg.MissionMapper">
+
+    <!-- ============================================================
+         核心 SQL (1): 任务调度防冲突 — SELECT ... FOR UPDATE 行锁
+         锁定候选无人机行,确保"空闲且电量足够"才被占用
+         ============================================================ -->
+    <select id="lockDroneForAssign" resultType="map">
+        SELECT d.drone_id, d.status, dl.battery_pct AS battery
+        FROM drones d
+        JOIN drone_latest dl ON dl.drone_id = d.drone_id
+        WHERE d.drone_id = #{droneId} AND d.status = 'idle'
+        FOR UPDATE OF d
+    </select>
+
+    <!-- 占用无人机(行锁保护下执行) -->
+    <update id="assignDrone">
+        UPDATE drones SET status = 'assigned' WHERE drone_id = #{droneId}
+    </update>
+
+    <!-- 插入分配记录 -->
+    <insert id="insertAssignment">
+        INSERT INTO mission_assignments(mission_id, drone_id, status, assigned_at)
+        VALUES (#{missionId}, #{droneId}, 'assigned', NOW())
+    </insert>
+
+    <!-- ============================================================
+         核心 SQL (2): 自组网多跳路径 — WITH RECURSIVE 递归 CTE
+         从 srcDroneId 出发,经中继节点到达地面站(drone_id=0)
+         ============================================================ -->
+    <select id="findRoute" resultType="map">
+        WITH RECURSIVE route AS (
+            SELECT src_drone_id, dst_drone_id, 1 AS hops,
+                   CAST(src_drone_id AS VARCHAR) || '->' || CAST(dst_drone_id AS VARCHAR) AS path
+            FROM network_links_snapshot
+            WHERE src_drone_id = #{srcDroneId} AND is_active = TRUE
+            UNION ALL
+            SELECT r.src_drone_id, nl.dst_drone_id, r.hops + 1,
+                   r.path || '->' || CAST(nl.dst_drone_id AS VARCHAR)
+            FROM network_links_snapshot nl
+            JOIN route r ON nl.src_drone_id = r.dst_drone_id
+            WHERE nl.is_active = TRUE AND r.hops &lt; 10
+        )
+        SELECT * FROM route WHERE dst_drone_id = 0 ORDER BY hops LIMIT 5
+    </select>
+
+    <!-- ============================================================
+         核心 SQL (3): 运营报表 — 聚合 + 窗口函数
+         各机任务完成数排名 + 平均电量
+         ============================================================ -->
+    <select id="missionRanking" resultType="map">
+        SELECT d.drone_id,
+               d.serial_no,
+               COUNT(ma.assign_id) AS completed_missions,
+               RANK() OVER (ORDER BY COUNT(ma.assign_id) DESC) AS rank,
+               ROUND(AVG(dl.battery_pct)::numeric, 1) AS avg_battery
+        FROM drones d
+        LEFT JOIN mission_assignments ma ON ma.drone_id = d.drone_id AND ma.status = 'done'
+        LEFT JOIN drone_latest dl ON dl.drone_id = d.drone_id
+        WHERE d.drone_id != 0
+        GROUP BY d.drone_id, d.serial_no
+        ORDER BY rank
+    </select>
+
+</mapper>

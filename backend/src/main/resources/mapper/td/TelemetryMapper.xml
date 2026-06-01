@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.fanet.mapper.td.TelemetryMapper">
+
+    <!-- 单条写入（自动建子表）-->
+    <insert id="insertOne">
+        INSERT INTO d_telemetry_${droneId} USING telemetry TAGS (#{droneId}, #{modelId}) VALUES (#{ts}, #{lat}, #{lon}, #{alt}, #{batteryPct}, #{rssi})
+    </insert>
+
+    <!-- 查某架机最近 N 条遥测 -->
+    <select id="queryLatestByDrone" resultType="map">
+        SELECT ts, lat, lon, alt, battery_pct, rssi FROM d_telemetry_${droneId} ORDER BY ts DESC LIMIT #{limit}
+    </select>
+
+</mapper>
