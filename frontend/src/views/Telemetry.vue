@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import * as echarts from 'echarts'
 import api from '../api'
+import { createTimeline } from '../composables/useAnime'
 
 const chartRef = ref(null)
 let chart = null
@@ -42,13 +43,18 @@ onMounted(async () => {
       })
     }
   } catch (e) { /* silent */ }
+
+  // 入场动画
+  const tl = createTimeline({ defaults: { duration: 500, ease: 'outExpo' } })
+  tl.add('.tele-title', { opacity: [0, 1], translateY: [-15, 0] })
+    .add('.tele-chart', { opacity: [0, 1], translateY: [30, 0] }, '-=300')
 })
 </script>
 
 <template>
   <div class="p-6 space-y-6">
-    <h1 class="text-lg font-semibold">遥测曲线</h1>
-    <div class="bg-surface-1 border border-hairline rounded-lg p-4">
+    <h1 class="tele-title text-lg font-semibold" style="opacity:0">遥测曲线</h1>
+    <div class="tele-chart bg-surface-1 border border-hairline rounded-lg p-4" style="opacity:0">
       <div ref="chartRef" class="w-full h-[400px]"></div>
     </div>
   </div>

@@ -1,6 +1,7 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import api from '../api'
+import { animate, stagger, createTimeline } from '../composables/useAnime'
 
 const drones = ref([])
 const stats = ref({ total: 0, flying: 0, idle: 0, offline: 0 })
@@ -27,32 +28,37 @@ async function fetchDrones() {
   } catch (e) { /* silent */ }
 }
 
-onMounted(() => {
-  fetchDrones()
+onMounted(async () => {
+  await fetchDrones()
   timer = setInterval(fetchDrones, 3000)
+  await nextTick()
+  const tl = createTimeline({ defaults: { duration: 500, ease: 'outExpo' } })
+  tl.add('.dash-title', { opacity: [0, 1], translateY: [-15, 0] })
+    .add('.stat-card', { opacity: [0, 1], scale: [0.92, 1], delay: stagger(80) }, '-=300')
+    .add('.drone-row', { opacity: [0, 1], translateX: [-20, 0], delay: stagger(50) }, '-=200')
 })
 onUnmounted(() => clearInterval(timer))
 </script>
 
 <template>
   <div class="p-6 space-y-6">
-    <h1 class="text-lg font-semibold">实时态势大屏</h1>
+    <h1 class="dash-title text-lg font-semibold" style="opacity:0">实时态势大屏</h1>
 
     <!-- 统计卡片 -->
     <div class="grid grid-cols-4 gap-4">
-      <div class="bg-surface-1 border border-hairline rounded-lg p-4">
+      <div class="stat-card bg-surface-1 border border-hairline rounded-lg p-4" style="opacity:0">
         <p class="text-xs text-ink-subtle mb-1">总机数</p>
         <p class="text-2xl font-semibold font-mono">{{ stats.total }}</p>
       </div>
-      <div class="bg-surface-1 border border-hairline rounded-lg p-4">
+      <div class="stat-card bg-surface-1 border border-hairline rounded-lg p-4" style="opacity:0">
         <p class="text-xs text-ink-subtle mb-1">飞行中</p>
         <p class="text-2xl font-semibold font-mono text-success">{{ stats.flying }}</p>
       </div>
-      <div class="bg-surface-1 border border-hairline rounded-lg p-4">
+      <div class="stat-card bg-surface-1 border border-hairline rounded-lg p-4" style="opacity:0">
         <p class="text-xs text-ink-subtle mb-1">空闲</p>
         <p class="text-2xl font-semibold font-mono text-ink-muted">{{ stats.idle }}</p>
       </div>
-      <div class="bg-surface-1 border border-hairline rounded-lg p-4">
+      <div class="stat-card bg-surface-1 border border-hairline rounded-lg p-4" style="opacity:0">
         <p class="text-xs text-ink-subtle mb-1">离线</p>
         <p class="text-2xl font-semibold font-mono text-danger">{{ stats.offline }}</p>
       </div>
@@ -65,9 +71,9 @@ onUnmounted(() => clearInterval(timer))
       </div>
       <div class="divide-y divide-hairline">
         <div v-for="d in drones" :key="d.droneId"
-             class="flex items-center justify-between px-4 py-3">
+             class="drone-row flex items-center justify-between px-4 py-3" style="opacity:0">
           <div class="flex items-center gap-3">
-            <span :class="[statusColor[d.status] || 'bg-ink-subtle', 'w-2 h-2 rounded-full']"></span>
+            <span :class="[statusColor[d.status] || 'bg-ink-subtle', 'w-2 h-2 rounded-full', d.status === 'flying' ? 'animate-pulse' : '']"></span>
             <span class="text-sm">{{ d.serialNo || 'Drone-' + d.droneId }}</span>
           </div>
           <div class="flex items-center gap-6 text-xs text-ink-subtle">

@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import * as echarts from 'echarts'
 import api from '../api'
+import { createTimeline } from '../composables/useAnime'
 
 const chartRef = ref(null)
 const routes = ref([])
@@ -42,6 +43,12 @@ onMounted(() => {
       emphasis: { lineStyle: { width: 4, color: '#5e6ad2' } }
     }]
   })
+
+  // 入场动画
+  const tl = createTimeline({ defaults: { duration: 500, ease: 'outExpo' } })
+  tl.add('.topo-title', { opacity: [0, 1], translateY: [-15, 0] })
+    .add('.topo-graph', { opacity: [0, 1], translateX: [-20, 0] }, '-=300')
+    .add('.topo-panel', { opacity: [0, 1], translateX: [20, 0] }, '-=400')
 })
 
 async function findRoute() {
@@ -56,13 +63,13 @@ async function findRoute() {
 
 <template>
   <div class="p-6 space-y-6">
-    <h1 class="text-lg font-semibold">拓扑分析</h1>
+    <h1 class="topo-title text-lg font-semibold" style="opacity:0">拓扑分析</h1>
 
     <div class="flex gap-4">
-      <div class="flex-1 bg-surface-1 border border-hairline rounded-lg p-4">
+      <div class="topo-graph flex-1 bg-surface-1 border border-hairline rounded-lg p-4" style="opacity:0">
         <div ref="chartRef" class="w-full h-[400px]"></div>
       </div>
-      <div class="w-[300px] bg-surface-1 border border-hairline rounded-lg p-4 space-y-4">
+      <div class="topo-panel w-[300px] bg-surface-1 border border-hairline rounded-lg p-4 space-y-4" style="opacity:0">
         <h2 class="text-sm font-medium text-ink-muted">路径查询 (递归 CTE)</h2>
         <div class="space-y-2">
           <label class="text-xs text-ink-subtle">源无人机 ID</label>

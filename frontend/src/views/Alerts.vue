@@ -1,6 +1,7 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, nextTick } from 'vue'
 import api from '../api'
+import { animate, stagger, createTimeline } from '../composables/useAnime'
 
 const alerts = ref([])
 const loading = ref(true)
@@ -29,12 +30,16 @@ onMounted(async () => {
     }
   } catch (e) { /* silent */ }
   loading.value = false
+  await nextTick()
+  const tl = createTimeline({ defaults: { duration: 500, ease: 'outExpo' } })
+  tl.add('.alert-title', { opacity: [0, 1], translateY: [-15, 0] })
+    .add('.alert-row', { opacity: [0, 1], translateX: [-20, 0], delay: stagger(80) }, '-=300')
 })
 </script>
 
 <template>
   <div class="p-6 space-y-6">
-    <h1 class="text-lg font-semibold">告警中心</h1>
+    <h1 class="alert-title text-lg font-semibold" style="opacity:0">告警中心</h1>
 
     <div class="bg-surface-1 border border-hairline rounded-lg">
       <div class="px-4 py-3 border-b border-hairline flex items-center justify-between">
@@ -43,7 +48,7 @@ onMounted(async () => {
       </div>
       <div class="divide-y divide-hairline">
         <div v-for="a in alerts" :key="a.id"
-             class="flex items-center justify-between px-4 py-3">
+             class="alert-row flex items-center justify-between px-4 py-3" style="opacity:0">
           <div class="flex items-center gap-3">
             <span :class="[severityStyle[a.severity], 'px-2 py-0.5 rounded text-xs font-medium']">
               {{ a.severity }}

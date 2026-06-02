@@ -29,3 +29,16 @@ body {
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: var(--color-surface-1); }
 ::-webkit-scrollbar-thumb { background: var(--color-hairline-strong); border-radius: 3px; }
+
+/* 路由切换过渡 */
+.page-enter-active { transition: opacity 0.25s ease, transform 0.25s ease; }
+.page-leave-active { transition: opacity 0.15s ease, transform 0.15s ease; }
+.page-enter-from { opacity: 0; transform: translateY(12px); }
+.page-leave-to { opacity: 0; transform: translateY(-8px); }
+
+/* Flying 状态脉冲 */
+@keyframes pulse-dot {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.6); opacity: 0.6; }
+}
+.animate-pulse { animation: pulse-dot 1.5s ease-in-out infinite; }

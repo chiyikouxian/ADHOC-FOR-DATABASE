@@ -1,7 +1,8 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../store/auth'
+import { createTimeline, stagger } from '../composables/useAnime'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -9,6 +10,14 @@ const username = ref('')
 const password = ref('')
 const error = ref('')
 const loading = ref(false)
+
+onMounted(() => {
+  const tl = createTimeline({ defaults: { duration: 600, ease: 'outExpo' } })
+  tl.add('.login-card', { opacity: [0, 1], scale: [0.95, 1], translateY: [30, 0] })
+    .add('.login-title', { opacity: [0, 1], translateY: [-10, 0] }, '-=400')
+    .add('.login-field', { opacity: [0, 1], translateY: [15, 0], delay: stagger(80) }, '-=300')
+    .add('.login-btn', { opacity: [0, 1], translateY: [10, 0] }, '-=200')
+})
 
 async function handleLogin() {
   error.value = ''
@@ -26,11 +35,11 @@ async function handleLogin() {
 
 <template>
   <div class="min-h-screen bg-canvas flex items-center justify-center">
-    <div class="w-[360px] bg-surface-1 border border-hairline rounded-lg p-8">
-      <h1 class="text-xl font-semibold text-ink mb-1">FANET Platform</h1>
-      <p class="text-sm text-ink-subtle mb-6">无人机自组网集群管理平台</p>
+    <div class="login-card w-[360px] bg-surface-1 border border-hairline rounded-lg p-8" style="opacity:0">
+      <h1 class="login-title text-xl font-semibold text-ink mb-1" style="opacity:0">FANET Platform</h1>
+      <p class="login-title text-sm text-ink-subtle mb-6" style="opacity:0">无人机自组网集群管理平台</p>
       <form @submit.prevent="handleLogin" class="space-y-4">
-        <div>
+        <div class="login-field" style="opacity:0">
           <label class="block text-xs text-ink-subtle mb-1.5">用户名</label>
           <input
             v-model="username"
@@ -39,7 +48,7 @@ async function handleLogin() {
             placeholder="admin"
           />
         </div>
-        <div>
+        <div class="login-field" style="opacity:0">
           <label class="block text-xs text-ink-subtle mb-1.5">密码</label>
           <input
             v-model="password"
@@ -52,7 +61,8 @@ async function handleLogin() {
         <button
           type="submit"
           :disabled="loading"
-          class="w-full h-9 bg-primary hover:bg-primary-hover text-white text-sm font-medium rounded-md transition-colors disabled:opacity-50 cursor-pointer"
+          class="login-btn w-full h-9 bg-primary hover:bg-primary-hover text-white text-sm font-medium rounded-md transition-colors disabled:opacity-50 cursor-pointer"
+          style="opacity:0"
         >
           {{ loading ? '登录中...' : '登录' }}
         </button>

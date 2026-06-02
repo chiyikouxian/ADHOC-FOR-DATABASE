@@ -1,6 +1,7 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, nextTick } from 'vue'
 import api from '../api'
+import { animate, stagger, createTimeline } from '../composables/useAnime'
 
 const ranking = ref([])
 const loading = ref(true)
@@ -11,6 +12,10 @@ onMounted(async () => {
     ranking.value = data
   } catch (e) { /* silent */ }
   loading.value = false
+  await nextTick()
+  const tl = createTimeline({ defaults: { duration: 500, ease: 'outExpo' } })
+  tl.add('.mission-title', { opacity: [0, 1], translateY: [-15, 0] })
+    .add('.mission-row', { opacity: [0, 1], translateX: [-15, 0], delay: stagger(60) }, '-=300')
 })
 
 async function assignDrone(droneId) {
@@ -30,7 +35,7 @@ async function resetDrone(droneId) {
 
 <template>
   <div class="p-6 space-y-6">
-    <h1 class="text-lg font-semibold">任务管理</h1>
+    <h1 class="mission-title text-lg font-semibold" style="opacity:0">任务管理</h1>
 
     <div class="bg-surface-1 border border-hairline rounded-lg">
       <div class="px-4 py-3 border-b border-hairline flex items-center justify-between">
@@ -48,7 +53,7 @@ async function resetDrone(droneId) {
           </tr>
         </thead>
         <tbody class="divide-y divide-hairline">
-          <tr v-for="r in ranking" :key="r.drone_id">
+          <tr v-for="r in ranking" :key="r.drone_id" class="mission-row" style="opacity:0">
             <td class="px-4 py-2 font-mono text-primary">#{{ r.rank }}</td>
             <td class="px-4 py-2">{{ r.serial_no }}</td>
             <td class="px-4 py-2 font-mono">{{ r.completed_missions }}</td>
