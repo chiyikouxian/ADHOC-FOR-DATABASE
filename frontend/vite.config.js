@@ -6,7 +6,8 @@ export default defineConfig({
   plugins: [vue(), tailwindcss()],
   server: {
     proxy: {
-      '/api': 'http://127.0.0.1:8080'
+      '/api': 'http://127.0.0.1:8080',
+      '/ws': { target: 'http://127.0.0.1:8080', ws: true }
     }
   }
 })

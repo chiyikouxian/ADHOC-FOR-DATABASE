@@ -3,6 +3,7 @@ package com.fanet.service;
 import com.fanet.mapper.pg.DroneLatestMapper;
 import com.fanet.mapper.td.TelemetryMapper;
 import com.fanet.model.TelemetryRecord;
+import com.fanet.websocket.DroneWebSocketHandler;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -17,13 +18,16 @@ public class TelemetryService {
     private final TelemetryMapper telemetryMapper;
     private final DroneLatestMapper droneLatestMapper;
     private final StringRedisTemplate redisTemplate;
+    private final DroneWebSocketHandler wsHandler;
 
     public TelemetryService(TelemetryMapper telemetryMapper,
                             DroneLatestMapper droneLatestMapper,
-                            StringRedisTemplate redisTemplate) {
+                            StringRedisTemplate redisTemplate,
+                            DroneWebSocketHandler wsHandler) {
         this.telemetryMapper = telemetryMapper;
         this.droneLatestMapper = droneLatestMapper;
         this.redisTemplate = redisTemplate;
+        this.wsHandler = wsHandler;
     }
 
     public void ingest(List<TelemetryRecord> records) {
@@ -54,6 +58,18 @@ public class TelemetryService {
                     "rssi", String.valueOf(r.getRssi()),
                     "ts", ts.toString());
             redisTemplate.opsForHash().putAll(key, hash);
+        }
+
+        // 4) 推送 WebSocket 广播（通知前端刷新）
+        for (TelemetryRecord r : records) {
+            wsHandler.broadcast("drone_update", Map.of(
+                    "droneId", r.getDroneId(),
+                    "lat", r.getLat() != null ? r.getLat() : 0,
+                    "lon", r.getLon() != null ? r.getLon() : 0,
+                    "alt", r.getAlt() != null ? r.getAlt() : 0,
+                    "batteryPct", r.getBatteryPct() != null ? r.getBatteryPct() : 0,
+                    "rssi", r.getRssi() != null ? r.getRssi() : 0
+            ));
         }
     }
 }
