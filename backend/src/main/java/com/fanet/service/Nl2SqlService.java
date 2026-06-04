@@ -2,31 +2,26 @@ package com.fanet.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.*;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
 
 import javax.sql.DataSource;
+import java.io.*;
+import java.net.HttpURLConnection;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.sql.*;
 import java.util.*;
 
 @Service
 public class Nl2SqlService {
 
-    private final RestTemplate restTemplate = new RestTemplate();
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final DataSource pgDataSource;
     private final DataSource tdDataSource;
 
-    @Value("${llm.api-base:https://api.deepseek.com}")
-    private String apiBase;
-
-    @Value("${llm.api-key:}")
-    private String apiKey;
-
-    @Value("${llm.model:deepseek-chat}")
-    private String model;
+    private final String apiBase;
+    private final String apiKey;
+    private final String model;
 
     // 白名单：只允许 SELECT 这些表
     private static final Set<String> PG_TABLES = Set.of(
@@ -37,50 +32,42 @@ public class Nl2SqlService {
     private static final Set<String> TD_TABLES = Set.of("telemetry", "network_links");
 
     // 双库 schema 上下文（喂给 LLM）
-    private static final String SCHEMA_CONTEXT = """
-            你是一个 SQL 专家。数据库是无人机自组网管理平台，有两个数据库：
-
-            【PostgreSQL（关系核心）】表：
-            - users(user_id, username, role)
-            - drone_models(model_id, model_name, max_flight_minutes, max_speed)
-            - drones(drone_id, model_id, serial_no, status)  -- status: idle/assigned/flying/offline/maintenance; drone_id=0 是地面站
-            - missions(mission_id, creator_id, title, status, planned_start, created_at) -- status: draft/scheduled/running/completed/aborted
-            - mission_assignments(assign_id, mission_id, drone_id, status, assigned_at, completed_at) -- status: assigned/executing/done/failed/released
-            - waypoints(wp_id, assign_id, seq, lat, lon, alt)
-            - alerts(alert_id, drone_id, alert_type, severity, detail, created_at, resolved) -- severity: info/warning/critical
-            - drone_latest(drone_id, ts, lat, lon, alt, battery_pct, rssi)
-            - v_drone_latest -- 视图：每架机最新状态（含型号信息）
-
-            【TDengine（遥测时序）】超级表：
-            - telemetry (ts, lat, lon, alt, battery_pct, rssi) TAGS (drone_id, model_id)
-            - network_links (ts, link_quality, is_active) TAGS (src_drone_id, dst_drone_id)
-
-            规则：
-            1. 关系/排名/统计/CRUD 类问题 → 查 PostgreSQL
-            2. 时序/趋势/按时间聚合/历史曲线类问题 → 查 TDengine
-            3. TDengine 用 INTERVAL 做时间窗聚合，LAST() 取最新值
-            4. PostgreSQL 用标准 SQL
-
-            返回 JSON 格式（不要 markdown 代码块）：
-            {"target_db":"pg","sql":"SELECT ..."}
-            或
-            {"target_db":"tdengine","sql":"SELECT ..."}
-            只返回 JSON，不要任何解释文字。""";
+    private static final String SCHEMA_CONTEXT = "你是一个SQL专家。无人机自组网管理平台有两个数据库：\n" +
+            "【PostgreSQL】表: users(username,role), drones(drone_id,serial_no,status), missions(mission_id,title,status), mission_assignments(mission_id,drone_id,status), waypoints(assign_id,seq,lat,lon,alt), alerts(drone_id,alert_type,severity,detail,resolved), drone_latest(drone_id,battery_pct,rssi,lat,lon,alt)\n" +
+            "【TDengine】超级表: telemetry(ts,lat,lon,alt,battery_pct,rssi) TAGS(drone_id,model_id)\n" +
+            "规则: 关系/排名/统计→PostgreSQL, 时序/趋势/聚合→TDengine(用INTERVAL)。\n" +
+            "只返回JSON: {\"target_db\":\"pg\",\"sql\":\"SELECT ...\"}";
 
     public Nl2SqlService(@Qualifier("pgDataSource") DataSource pgDataSource,
                          @Qualifier("tdDataSource") DataSource tdDataSource) {
         this.pgDataSource = pgDataSource;
         this.tdDataSource = tdDataSource;
+        this.apiBase = cleanEnv("LLM_API_BASE", "https://api.deepseek.com");
+        this.apiKey = cleanEnv("LLM_API_KEY", "");
+        this.model = cleanEnv("LLM_MODEL", "deepseek-v4-flash");
+    }
+
+    /** 读环境变量并清理：去注释、trim、strip 尾部 # 注释 */
+    private static String cleanEnv(String name, String defaultValue) {
+        String val = System.getenv().getOrDefault(name, defaultValue);
+        if (val == null) return null;
+        val = val.strip();
+        int commentIdx = val.indexOf('#');
+        if (commentIdx > 0 && val.charAt(commentIdx - 1) == ' ') {
+            val = val.substring(0, commentIdx).strip();
+        }
+        return val;
     }
 
     public Map<String, Object> ask(String question) {
-        if (apiKey == null || apiKey.isBlank() || apiKey.equals("your-deepseek-api-key")) {
-            return Map.of("error", "API Key 未配置，请在 .env 或 application.yml 中设置 llm.api-key");
+        if (apiKey == null || apiKey.isBlank()) {
+            return Map.of("error", "API Key 未配置，请设置环境变量 LLM_API_KEY");
         }
 
         // 1) 调 DeepSeek 生成 SQL
         String llmResponse = callLlm(question);
-        if (llmResponse == null) return Map.of("error", "LLM 调用失败");
+        if (llmResponse == null) return Map.of("error", "LLM 调用失败：无响应");
+        if (llmResponse.startsWith("ERROR:")) return Map.of("error", llmResponse);
 
         // 2) 解析 JSON
         Map<String, String> parsed = parseLlmResponse(llmResponse);
@@ -103,26 +90,40 @@ public class Nl2SqlService {
 
     private String callLlm(String question) {
         try {
-            Map<String, Object> body = Map.of(
-                    "model", model,
-                    "messages", List.of(
-                            Map.of("role", "system", "content", SCHEMA_CONTEXT),
-                            Map.of("role", "user", "content", question)
-                    ),
-                    "temperature", 0.1,
-                    "max_tokens", 500
-            );
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.setBearerAuth(apiKey);
-            HttpEntity<Map<String, Object>> req = new HttpEntity<>(body, headers);
-            ResponseEntity<Map> resp = restTemplate.postForEntity(apiBase + "/v1/chat/completions", req, Map.class);
-            Map body2 = resp.getBody();
-            List<Map> choices = (List<Map>) body2.get("choices");
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("model", model);
+            body.put("messages", List.of(
+                    Map.of("role", "system", "content", SCHEMA_CONTEXT),
+                    Map.of("role", "user", "content", question)
+            ));
+            body.put("temperature", 0.1);
+            body.put("max_tokens", 500);
+            String json = objectMapper.writeValueAsString(body);
+
+            URI uri = URI.create(apiBase + "/v1/chat/completions");
+            HttpURLConnection conn = (HttpURLConnection) uri.toURL().openConnection();
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setRequestProperty("Authorization", "Bearer " + apiKey);
+            conn.setDoOutput(true);
+            conn.setConnectTimeout(10000);
+            conn.setReadTimeout(30000);
+
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(json.getBytes(StandardCharsets.UTF_8));
+            }
+
+            int code = conn.getResponseCode();
+            InputStream is = code >= 400 ? conn.getErrorStream() : conn.getInputStream();
+            String resp = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+            if (code >= 400) return "ERROR: HTTP " + code + " - " + resp.substring(0, Math.min(resp.length(), 200));
+
+            Map respMap = objectMapper.readValue(resp, Map.class);
+            List<Map> choices = (List<Map>) respMap.get("choices");
             Map msg = (Map) ((Map) choices.get(0)).get("message");
             return (String) msg.get("content");
         } catch (Exception e) {
-            return null;
+            return "ERROR: " + e.getClass().getSimpleName() + " - " + e.getMessage();
         }
     }
 
