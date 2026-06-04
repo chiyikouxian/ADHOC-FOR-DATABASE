@@ -13,6 +13,7 @@ const navItems = [
   { path: '/telemetry', label: '遥测曲线', icon: '〜' },
   { path: '/topology', label: '拓扑分析', icon: '⬡' },
   { path: '/alerts', label: '告警中心', icon: '△' },
+  { path: '/ai', label: 'AI 问答', icon: '◇' },
 ]
 
 function logout() {

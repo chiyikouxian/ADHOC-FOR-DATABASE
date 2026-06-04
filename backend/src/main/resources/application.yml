@@ -37,6 +37,12 @@ datasource:
       minimum-idle: 3
       connection-timeout: 30000
 
+# ---------- LLM / NL2SQL ----------
+llm:
+  api-base: ${LLM_API_BASE:https://api.deepseek.com}
+  api-key: ${LLM_API_KEY:your-deepseek-api-key}
+  model: ${LLM_MODEL:deepseek-chat}
+
 # ---------- JWT ----------
 jwt:
   secret: ${JWT_SECRET:dev-only-secret-change-in-prod-32chars!}
