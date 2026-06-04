@@ -19,7 +19,7 @@ datasource:
   pg:
     jdbc-url: jdbc:postgresql://${PG_HOST:127.0.0.1}:${PG_PORT:5432}/${PG_DB:fanet}
     username: ${PG_USER:fanet_app}
-    password: ${PG_PASSWORD:change_me_in_real_env}
+    password: ${PG_PASSWORD:fanet_dev_pwd}
     driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: 20

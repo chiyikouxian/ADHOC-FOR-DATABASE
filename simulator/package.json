@@ -1,0 +1,7 @@
+{
+  "name": "fanet-simulator",
+  "private": true,
+  "dependencies": {
+    "mqtt": "^5.0.0"
+  }
+}

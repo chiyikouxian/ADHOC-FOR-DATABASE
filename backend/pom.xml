@@ -60,6 +60,13 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!-- MQTT (Eclipse Paho) -->
+        <dependency>
+            <groupId>org.eclipse.paho</groupId>
+            <artifactId>org.eclipse.paho.client.mqttv3</artifactId>
+            <version>1.2.5</version>
+        </dependency>
+
         <!-- TDengine JDBC-RESTful (走 HTTP 6041 端口，无需原生驱动) -->
         <dependency>
             <groupId>com.taosdata.jdbc</groupId>
