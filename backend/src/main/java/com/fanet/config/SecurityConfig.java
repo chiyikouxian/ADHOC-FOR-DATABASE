@@ -31,6 +31,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/health").permitAll()
                 .requestMatchers("/api/telemetry").permitAll()
                 .requestMatchers("/api/ai/**").permitAll()
+                .requestMatchers("/api/alerts/**").permitAll()
                 .requestMatchers("/ws/**").permitAll()
                 .requestMatchers("/api/drones/**").permitAll()
                 .requestMatchers("/api/missions/**").permitAll()
