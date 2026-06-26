@@ -59,6 +59,49 @@ public class Nl2SqlService {
         return val;
     }
 
+    /**
+     * 自由格式 LLM 调用（不生成 SQL，返回纯文本）
+     * 用于续航分析、复盘报告等非 SQL 场景
+     */
+    public String askRaw(String prompt) {
+        if (apiKey == null || apiKey.isBlank()) return null;
+        try {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("model", model);
+            body.put("messages", List.of(
+                    Map.of("role", "user", "content", prompt)
+            ));
+            body.put("temperature", 0.3);
+            body.put("max_tokens", 300);
+            String json = objectMapper.writeValueAsString(body);
+
+            URI uri = URI.create(apiBase + "/v1/chat/completions");
+            HttpURLConnection conn = (HttpURLConnection) uri.toURL().openConnection();
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setRequestProperty("Authorization", "Bearer " + apiKey);
+            conn.setDoOutput(true);
+            conn.setConnectTimeout(10000);
+            conn.setReadTimeout(30000);
+
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(json.getBytes(StandardCharsets.UTF_8));
+            }
+
+            int code = conn.getResponseCode();
+            InputStream is = code >= 400 ? conn.getErrorStream() : conn.getInputStream();
+            String resp = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+            if (code >= 400) return null;
+
+            Map respMap = objectMapper.readValue(resp, Map.class);
+            List<Map> choices = (List<Map>) respMap.get("choices");
+            Map msg = (Map) ((Map) choices.get(0)).get("message");
+            return (String) msg.get("content");
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     public Map<String, Object> ask(String question) {
         if (apiKey == null || apiKey.isBlank()) {
             return Map.of("error", "API Key 未配置，请设置环境变量 LLM_API_KEY");

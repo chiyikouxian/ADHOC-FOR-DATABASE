@@ -1,50 +1,148 @@
-# 数据库初始化说明（FANET 平台）
+# Database Notes
 
-双库混合架构：**PostgreSQL 16** 承载关系/事务核心，**TDengine 3.x** 承载遥测时序。不使用 MySQL。
+This project uses two databases:
 
-## 文件清单
+- PostgreSQL 16 for relational and transactional data
+- TDengine 3.x for telemetry time-series data
 
-| 文件 | 目标库 | 作用 |
-|---|---|---|
-| `schema_pg.sql` | PostgreSQL 16 | 关系表、索引、外键、视图、触发器、跨库快照表 |
-| `schema_tdengine.sql` | TDengine 3.x | telemetry / network_links 超级表 + 数据保留策略 |
-| `seed_pg.sql` | PostgreSQL 16 | 关系侧逼真种子数据（型号/无人机/用户/任务/告警） |
+## Files
 
-## 初始化顺序
+- `schema_pg.sql`: PostgreSQL schema, indexes, views, triggers
+- `seed_pg.sql`: PostgreSQL seed data
+- `schema_tdengine.sql`: TDengine super tables and sample setup
 
-```bash
-# 1) PostgreSQL：建关系 schema（假设库名 fanet，用户 fanet_app）
-psql -h 127.0.0.1 -U fanet_app -d fanet -f db/schema_pg.sql
+## Initialization
 
-# 2) PostgreSQL：灌种子数据（依赖 schema_pg.sql）
-psql -h 127.0.0.1 -U fanet_app -d fanet -f db/seed_pg.sql
+### PostgreSQL
 
-# 3) TDengine：建时序 schema（taos CLI 或 REST）
-taos -h 127.0.0.1 -f db/schema_tdengine.sql
+When you start the stack with `docker compose up -d`, PostgreSQL loads:
+
+- `db/schema_pg.sql`
+- `db/seed_pg.sql`
+
+on first boot automatically.
+
+### TDengine
+
+Run once after containers are up:
+
+```powershell
+docker exec -i fanet-tdengine taos -f /tmp/schema_tdengine.sql
 ```
 
-> 遥测历史数据不在种子里，由 S3 遥测模拟器持续写入 TDengine（`schema_tdengine.sql` 末尾有 INSERT 示例）。
+Verify:
 
-## 跨库约定
-
-- TDengine 不设外键；`drone_id` 标签与 PG `drones.drone_id` 同值，应用层据此关联。
-- 接入服务写 TDengine 遥测时，同步回写 PG `drone_latest`（最新状态快照），供任务调度事务单库内读电量。
-- 拓扑分析前，从 TDengine 取最近一窗活跃链路写入 PG `network_links_snapshot`，再在 PG 跑递归 CTE。
-- `drone_id = 0` 为地面站，递归拓扑的路径终点。
-
-## 安全提示
-
-- 种子用户密码为 bcrypt 占位 hash（明文 `password`），仅供开发，**上线前必须更换**。
-- 数据库口令、大模型 API Key 一律走环境变量，禁止提交 Git。
-- NL2SQL 对两库各用一个**只读账号** + SQL 白名单（只允许 SELECT）。
-
-## 只读账号（NL2SQL 用，示例）
-
-```sql
--- PostgreSQL 只读账号
-CREATE ROLE fanet_ro LOGIN PASSWORD :'ro_pwd';   -- 口令走环境变量传入
-GRANT CONNECT ON DATABASE fanet TO fanet_ro;
-GRANT USAGE ON SCHEMA public TO fanet_ro;
-GRANT SELECT ON ALL TABLES IN SCHEMA public TO fanet_ro;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO fanet_ro;
+```powershell
+docker exec -i fanet-tdengine taos -s "show fanet.stables;"
 ```
+
+## Core PostgreSQL objects
+
+- `users`
+- `drone_models`
+- `drones`
+- `missions`
+- `mission_assignments`
+- `waypoints`
+- `alerts`
+- `audit_log`
+- `drone_latest`
+- `network_links_snapshot`
+- `v_drone_latest`
+
+## Core TDengine objects
+
+- `telemetry`
+- `network_links`
+
+## Important API endpoints
+
+### Relational / operational
+
+- `POST /api/auth/login`
+- `GET /api/drones`
+- `GET /api/drones/{id}`
+- `POST /api/missions/{id}/assign/{droneId}`
+- `GET /api/missions`
+- `GET /api/missions/ranking`
+- `GET /api/missions/route/{droneId}`
+- `GET /api/alerts`
+- `POST /api/alerts/{alertId}/resolve`
+- `GET /api/topology`
+- `GET /api/topology/links`
+
+### Telemetry / TDengine
+
+- `POST /api/telemetry`
+- `GET /api/telemetry/drone/{id}/series`
+- `GET /api/telemetry/cluster/aggregate`
+- `GET /api/telemetry/drone/{id}/battery`
+- `GET /api/telemetry/drone/{id}/rssi`
+- `GET /api/telemetry/links/snapshot`
+
+### AI / analysis
+
+- `POST /api/ai/ask`
+- `POST /api/ai/endurance`
+- `POST /api/ai/report`
+
+### Explain endpoints
+
+- `GET /api/explain/schedule`
+- `GET /api/explain/recursive`
+- `GET /api/explain/ranking`
+- `GET /api/explain/drones`
+
+## Query and benchmark scripts
+
+```powershell
+node simulator/load-test.js
+node simulator/load-test.js --mqtt
+node simulator/load-test.js --compare
+node simulator/concurrency-test.js 10 1
+node simulator/query-bench.js
+```
+
+## Latest benchmark snapshot
+
+Environment used in the latest verification:
+
+- Backend port: `18080`
+- Compare mode: PostgreSQL-only path vs TDengine-only path
+- Duration per stage: `10s`
+- Stages: `10 -> 50 -> 100 -> 200 -> 500` drones
+
+Observed compare results:
+
+| Drones | PG TPS | TD TPS | TD/PG | PG P95 | TD P95 |
+|---|---:|---:|---:|---:|---:|
+| 10 | 126.3 | 160.7 | 127% | 10ms | 7ms |
+| 50 | 173.9 | 175.1 | 101% | 7ms | 7ms |
+| 100 | 143.8 | 169.1 | 118% | 9ms | 7ms |
+| 200 | 103.5 | 151.7 | 147% | 12ms | 8ms |
+| 500 | 52.5 | 106.4 | 203% | 24ms | 12ms |
+
+Conclusion:
+
+- TDengine-only ingestion outperformed PostgreSQL-only ingestion across most stages.
+- The gap widened as load increased, especially at `500` drones.
+- At `500` drones, TDengine reached `106.4 TPS` while PostgreSQL reached `52.5 TPS`.
+- P95 latency at `500` drones was `12ms` for TDengine and `24ms` for PostgreSQL.
+- These results support the project's split-storage design:
+  PostgreSQL handles transactional and relational workloads, while TDengine is the better fit for high-frequency telemetry writes.
+
+## Known data flow
+
+1. Telemetry is written into TDengine
+2. Latest drone snapshot is upserted into PostgreSQL `drone_latest`
+3. Link snapshots are synced from TDengine into PostgreSQL `network_links_snapshot`
+4. Frontend pages read:
+   - PostgreSQL for mission, alert, topology, and dashboard views
+   - TDengine-backed APIs for time-series and prediction inputs
+
+## Current runtime defaults
+
+- Backend port: `18080`
+- Frontend proxy target: `http://127.0.0.1:18080`
+- MQTT topic telemetry: `fanet/telemetry`
+- MQTT topic links: `fanet/network_links`

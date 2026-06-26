@@ -42,4 +42,9 @@ public class MissionController {
     public ResponseEntity<List<Map<String, Object>>> ranking() {
         return ResponseEntity.ok(missionService.missionRanking());
     }
+
+    @GetMapping
+    public ResponseEntity<List<Map<String, Object>>> list() {
+        return ResponseEntity.ok(missionService.listMissions());
+    }
 }

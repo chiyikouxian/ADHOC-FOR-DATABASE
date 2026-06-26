@@ -29,13 +29,15 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/auth/**").permitAll()
                 .requestMatchers("/api/health").permitAll()
-                .requestMatchers("/api/telemetry").permitAll()
+                .requestMatchers("/api/telemetry/**").permitAll()
                 .requestMatchers("/api/ai/**").permitAll()
                 .requestMatchers("/api/alerts/**").permitAll()
                 .requestMatchers("/api/explain/**").permitAll()
+                .requestMatchers("/api/bench/**").permitAll()
                 .requestMatchers("/ws/**").permitAll()
                 .requestMatchers("/api/drones/**").permitAll()
                 .requestMatchers("/api/missions/**").permitAll()
+                .requestMatchers("/api/topology/**").permitAll()
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
                 .anyRequest().authenticated())
             .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);

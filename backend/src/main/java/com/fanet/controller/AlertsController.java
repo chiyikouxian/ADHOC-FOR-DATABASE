@@ -42,4 +42,24 @@ public class AlertsController {
         }
         return ResponseEntity.ok(alerts);
     }
+
+    @PostMapping("/{alertId}/resolve")
+    public ResponseEntity<?> resolve(@PathVariable Long alertId) {
+        String sql = "UPDATE alerts SET resolved = TRUE WHERE alert_id = ? RETURNING alert_id, resolved";
+        try (Connection conn = pgDataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setLong(1, alertId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) {
+                    return ResponseEntity.status(404).body(Map.of("error", "告警不存在"));
+                }
+                return ResponseEntity.ok(Map.of(
+                        "alert_id", rs.getLong("alert_id"),
+                        "resolved", rs.getBoolean("resolved")
+                ));
+            }
+        } catch (SQLException e) {
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
+    }
 }

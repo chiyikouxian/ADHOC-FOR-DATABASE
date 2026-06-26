@@ -43,4 +43,8 @@ public class MissionService {
     public List<Map<String, Object>> missionRanking() {
         return missionMapper.missionRanking();
     }
+
+    public List<Map<String, Object>> listMissions() {
+        return missionMapper.listMissions();
+    }
 }

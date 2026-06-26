@@ -64,4 +64,10 @@
         ORDER BY rank
     </select>
 
+    <select id="listMissions" resultType="map">
+        SELECT mission_id, title, status, planned_start, created_at
+        FROM missions
+        ORDER BY COALESCE(planned_start, created_at) DESC, mission_id DESC
+    </select>
+
 </mapper>

@@ -18,4 +18,6 @@ public interface MissionMapper {
     java.util.List<Map<String, Object>> findRoute(@Param("srcDroneId") Integer srcDroneId);
 
     java.util.List<Map<String, Object>> missionRanking();
+
+    java.util.List<Map<String, Object>> listMissions();
 }

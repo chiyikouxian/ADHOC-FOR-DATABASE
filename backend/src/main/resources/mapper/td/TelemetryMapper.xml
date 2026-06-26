@@ -3,14 +3,105 @@
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.fanet.mapper.td.TelemetryMapper">
 
+    <!-- ==================== 写入 ==================== -->
+
     <!-- 单条写入（自动建子表）-->
     <insert id="insertOne">
         INSERT INTO d_telemetry_${droneId} USING telemetry TAGS (#{droneId}, #{modelId}) VALUES (#{ts}, #{lat}, #{lon}, #{alt}, #{batteryPct}, #{rssi})
     </insert>
 
+    <!-- ==================== 基础查询 ==================== -->
+
     <!-- 查某架机最近 N 条遥测 -->
     <select id="queryLatestByDrone" resultType="map">
         SELECT ts, lat, lon, alt, battery_pct, rssi FROM d_telemetry_${droneId} ORDER BY ts DESC LIMIT #{limit}
+    </select>
+
+    <!-- ==================== 时间窗聚合（TDengine INTERVAL） ==================== -->
+
+    <!--
+        核心亮点：单机遥测降采样
+        TDengine INTERVAL 时间窗聚合 — 按窗口取 AVG(battery_pct), AVG(rssi), LAST(lat), LAST(lon), LAST(alt)
+        用于前端遥测曲线、AI 趋势分析
+    -->
+    <select id="aggregateByDrone" resultType="map">
+        SELECT
+            _wstart AS win_start,
+            AVG(battery_pct) AS avg_battery,
+            AVG(rssi) AS avg_rssi,
+            LAST(lat) AS lat,
+            LAST(lon) AS lon,
+            LAST(alt) AS alt
+        FROM d_telemetry_${droneId}
+        WHERE ts >= #{since}
+        INTERVAL(${window})
+    </select>
+
+    <!--
+        全集群遥测聚合（所有无人机按窗口汇总）
+        用超级表 telemetry 查询，PARTITION BY drone_id 按子表分组
+        用于大屏概览、集群级别趋势分析
+    -->
+    <select id="aggregateAllDrones" resultType="map">
+        SELECT
+            drone_id,
+            _wstart AS win_start,
+            AVG(battery_pct) AS avg_battery,
+            AVG(rssi) AS avg_rssi,
+            LAST(lat) AS lat,
+            LAST(lon) AS lon,
+            LAST(alt) AS alt
+        FROM telemetry
+        WHERE ts >= #{since}
+        PARTITION BY drone_id
+        INTERVAL(${window})
+    </select>
+
+    <!--
+        单机电量时序（原始数据，不做聚合）
+        用于续航预测：取最近一段时间的 battery_pct 原始序列做趋势拟合
+    -->
+    <select id="batterySeries" resultType="map">
+        SELECT ts, battery_pct FROM d_telemetry_${droneId}
+        WHERE ts >= #{since}
+        ORDER BY ts ASC
+    </select>
+
+    <!--
+        单机信号时序（原始 RSSI 序列）
+        用于异常检测滑动窗口分析
+    -->
+    <select id="rssiSeries" resultType="map">
+        SELECT ts, rssi FROM d_telemetry_${droneId}
+        WHERE ts >= #{since}
+        ORDER BY ts ASC
+    </select>
+
+    <!-- ==================== 链路快照导出（供 PG 递归 CTE 用） ==================== -->
+
+    <!--
+        核心亮点：最新链路快照导出
+        从 TDengine network_links 超表取最近时间窗内每条链路的最新状态
+        后端将其落入 PG network_links_snapshot 后跑 WITH RECURSIVE
+    -->
+    <select id="latestLinkSnapshot" resultType="map">
+        SELECT
+            src_drone_id,
+            dst_drone_id,
+            LAST(link_quality) AS link_quality,
+            LAST(is_active) AS is_active
+        FROM network_links
+        WHERE ts >= #{since}
+        PARTITION BY src_drone_id, dst_drone_id
+    </select>
+
+    <!-- 查某条链路最近 N 条记录（调试/详情用） -->
+    <select id="linkHistory" resultType="map">
+        SELECT ts, link_quality, is_active
+        FROM l_link_${srcDroneId}_${dstDroneId}
+        WHERE ts >= #{since}
+        ORDER BY ts DESC
+        LIMIT #{limit}
     </select>
 
 </mapper>
