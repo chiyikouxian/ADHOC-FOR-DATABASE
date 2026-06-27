@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.fanet.mapper.pg.SimulationScenarioMapper">
+
+    <select id="listScenarios" resultType="map">
+        SELECT scenario_id AS "scenarioId",
+               name,
+               status,
+               drone_count AS "droneCount",
+               topology_mode AS "topologyMode",
+               motion_mode AS "motionMode",
+               publish_interval_ms AS "publishIntervalMs",
+               updated_at AS "updatedAt"
+        FROM sim_scenarios
+        ORDER BY CASE WHEN name = '默认演示场景' THEN 0 ELSE 1 END,
+                 updated_at DESC,
+                 scenario_id DESC
+    </select>
+
+    <select id="findScenarioByName" resultType="com.fanet.model.SimulationScenario">
+        SELECT scenario_id AS scenarioId,
+               name,
+               description,
+               status,
+               drone_count AS droneCount,
+               publish_interval_ms AS publishIntervalMs,
+               area_center_lat AS areaCenterLat,
+               area_center_lon AS areaCenterLon,
+               area_radius_m AS areaRadiusM,
+               battery_min AS batteryMin,
+               battery_max AS batteryMax,
+               rssi_min AS rssiMin,
+               rssi_max AS rssiMax,
+               alt_min AS altMin,
+               alt_max AS altMax,
+               topology_mode AS topologyMode,
+               motion_mode AS motionMode,
+               created_by AS createdBy,
+               created_at AS createdAt,
+               updated_at AS updatedAt
+        FROM sim_scenarios
+        WHERE name = #{name}
+        ORDER BY scenario_id ASC
+        LIMIT 1
+    </select>
+
+    <select id="findScenarioById" resultType="com.fanet.model.SimulationScenario">
+        SELECT scenario_id AS scenarioId,
+               name,
+               description,
+               status,
+               drone_count AS droneCount,
+               publish_interval_ms AS publishIntervalMs,
+               area_center_lat AS areaCenterLat,
+               area_center_lon AS areaCenterLon,
+               area_radius_m AS areaRadiusM,
+               battery_min AS batteryMin,
+               battery_max AS batteryMax,
+               rssi_min AS rssiMin,
+               rssi_max AS rssiMax,
+               alt_min AS altMin,
+               alt_max AS altMax,
+               topology_mode AS topologyMode,
+               motion_mode AS motionMode,
+               created_by AS createdBy,
+               created_at AS createdAt,
+               updated_at AS updatedAt
+        FROM sim_scenarios
+        WHERE scenario_id = #{scenarioId}
+    </select>
+
+    <select id="findScenarioDronesByScenarioId" resultType="com.fanet.model.SimulationScenarioDrone">
+        SELECT scenario_drone_id AS scenarioDroneId,
+               scenario_id AS scenarioId,
+               drone_no AS droneNo,
+               model_id AS modelId,
+               serial_no AS serialNo,
+               initial_lat AS initialLat,
+               initial_lon AS initialLon,
+               initial_alt AS initialAlt,
+               initial_battery_pct AS initialBatteryPct,
+               initial_rssi AS initialRssi,
+               role_tag AS roleTag
+        FROM sim_scenario_drones
+        WHERE scenario_id = #{scenarioId}
+        ORDER BY drone_no
+    </select>
+
+    <select id="findScenarioLinksByScenarioId" resultType="com.fanet.model.SimulationScenarioLink">
+        SELECT scenario_link_id AS scenarioLinkId,
+               scenario_id AS scenarioId,
+               src_drone_no AS srcDroneNo,
+               dst_drone_no AS dstDroneNo,
+               initial_quality AS initialQuality,
+               is_enabled AS isEnabled
+        FROM sim_scenario_links
+        WHERE scenario_id = #{scenarioId}
+        ORDER BY src_drone_no, dst_drone_no
+    </select>
+
+    <insert id="insertScenario" useGeneratedKeys="true" keyProperty="scenarioId">
+        INSERT INTO sim_scenarios (
+            name, description, status, drone_count, publish_interval_ms,
+            area_center_lat, area_center_lon, area_radius_m,
+            battery_min, battery_max, rssi_min, rssi_max,
+            alt_min, alt_max, topology_mode, motion_mode, created_by
+        ) VALUES (
+            #{name}, #{description}, #{status}, #{droneCount}, #{publishIntervalMs},
+            #{areaCenterLat}, #{areaCenterLon}, #{areaRadiusM},
+            #{batteryMin}, #{batteryMax}, #{rssiMin}, #{rssiMax},
+            #{altMin}, #{altMax}, #{topologyMode}, #{motionMode}, #{createdBy}
+        )
+    </insert>
+
+    <update id="updateScenario">
+        UPDATE sim_scenarios
+        SET name = #{name},
+            description = #{description},
+            status = #{status},
+            drone_count = #{droneCount},
+            publish_interval_ms = #{publishIntervalMs},
+            area_center_lat = #{areaCenterLat},
+            area_center_lon = #{areaCenterLon},
+            area_radius_m = #{areaRadiusM},
+            battery_min = #{batteryMin},
+            battery_max = #{batteryMax},
+            rssi_min = #{rssiMin},
+            rssi_max = #{rssiMax},
+            alt_min = #{altMin},
+            alt_max = #{altMax},
+            topology_mode = #{topologyMode},
+            motion_mode = #{motionMode}
+        WHERE scenario_id = #{scenarioId}
+    </update>
+
+    <delete id="deleteScenario">
+        DELETE FROM sim_scenarios WHERE scenario_id = #{scenarioId}
+    </delete>
+
+    <delete id="deleteScenarioDrones">
+        DELETE FROM sim_scenario_drones WHERE scenario_id = #{scenarioId}
+    </delete>
+
+    <delete id="deleteScenarioLinks">
+        DELETE FROM sim_scenario_links WHERE scenario_id = #{scenarioId}
+    </delete>
+
+    <insert id="insertScenarioDrone">
+        INSERT INTO sim_scenario_drones (
+            scenario_id, drone_no, model_id, serial_no,
+            initial_lat, initial_lon, initial_alt, initial_battery_pct,
+            initial_rssi, role_tag
+        ) VALUES (
+            #{scenarioId}, #{droneNo}, #{modelId}, #{serialNo},
+            #{initialLat}, #{initialLon}, #{initialAlt}, #{initialBatteryPct},
+            #{initialRssi}, #{roleTag}
+        )
+    </insert>
+
+    <insert id="insertScenarioLink">
+        INSERT INTO sim_scenario_links (
+            scenario_id, src_drone_no, dst_drone_no, initial_quality, is_enabled
+        ) VALUES (
+            #{scenarioId}, #{srcDroneNo}, #{dstDroneNo}, #{initialQuality}, #{isEnabled}
+        )
+    </insert>
+
+</mapper>

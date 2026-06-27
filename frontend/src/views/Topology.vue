@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import api from '../api'
 import { createTimeline } from '../composables/useAnime'
@@ -9,10 +9,12 @@ const routes = ref([])
 const selectedDrone = ref(4)
 const topology = ref({ nodes: [], edges: [] })
 const loading = ref(true)
+
 let chart = null
 let ws = null
+let topologySignature = ''
+let topologyRefreshTimer = null
 
-// 颜色映射
 const STATUS_COLORS = {
   idle: '#27a644',
   flying: '#5e6ad2',
@@ -21,143 +23,268 @@ const STATUS_COLORS = {
   maintenance: '#e04554',
 }
 
-// 构建 ECharts 图
-function buildChart() {
-  if (!chart || !topology.value.nodes.length) return
+function projectNodes(nodes) {
+  const validNodes = nodes.filter(node => Number.isFinite(Number(node.lat)) && Number.isFinite(Number(node.lon)))
+  if (!validNodes.length) {
+    return new Map()
+  }
 
-  const nodes = topology.value.nodes.map(n => ({
-    name: n.name,
-    symbolSize: n.isGround ? 40 : 28,
-    itemStyle: { color: n.isGround ? '#5e6ad2' : (STATUS_COLORS[n.status] || '#8a8f98') },
-    droneId: n.droneId,
+  const lats = validNodes.map(node => Number(node.lat))
+  const lons = validNodes.map(node => Number(node.lon))
+  const minLat = Math.min(...lats)
+  const maxLat = Math.max(...lats)
+  const minLon = Math.min(...lons)
+  const maxLon = Math.max(...lons)
+  const latSpan = Math.max(0.0001, maxLat - minLat)
+  const lonSpan = Math.max(0.0001, maxLon - minLon)
+  const width = 900
+  const height = 520
+  const padding = 70
+  const projected = new Map()
+
+  for (const node of nodes) {
+    const lat = Number(node.lat)
+    const lon = Number(node.lon)
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+      continue
+    }
+
+    const x = padding + ((lon - minLon) / lonSpan) * (width - padding * 2)
+    const y = height - padding - ((lat - minLat) / latSpan) * (height - padding * 2)
+    projected.set(String(node.droneNo), { x, y })
+  }
+
+  return projected
+}
+
+function buildChart() {
+  if (!chart) {
+    return
+  }
+
+  if (!topology.value.nodes.length) {
+    chart.clear()
+    return
+  }
+
+  const previewNodes = topology.value.nodes.map(node => ({
+    droneNo: node.droneId,
+    name: node.name,
+    lat: node.lat,
+    lon: node.lon,
+    alt: node.alt,
+    batteryPct: node.batteryPct,
+    rssi: null,
+    status: node.status,
+    isGround: node.isGround,
   }))
 
-  const links = topology.value.edges.map(e => {
-    const srcNode = topology.value.nodes.find(n => n.droneId === e.source)
-    const dstNode = topology.value.nodes.find(n => n.droneId === e.target)
-    return {
-      source: srcNode?.name || `Drone-${e.source}`,
-      target: dstNode?.name || `Drone-${e.target}`,
-      lineStyle: {
-        width: Math.max(1, e.quality / 30),
-        color: e.active ? '#34343a' : '#23252a',
-        opacity: e.active ? 0.8 : 0.3,
-      }
-    }
-  })
+  const projected = projectNodes(previewNodes)
+
+  const nodes = previewNodes.map(node => ({
+    id: String(node.droneNo),
+    name: node.name,
+    x: projected.get(String(node.droneNo))?.x,
+    y: projected.get(String(node.droneNo))?.y,
+    symbolSize: node.isGround ? 42 : 28,
+    itemStyle: {
+      color: node.isGround ? '#0b57d0' : (STATUS_COLORS[node.status] || '#8a8f98'),
+    },
+    value: [
+      node.lat,
+      node.lon,
+      node.alt,
+      node.batteryPct,
+      node.rssi,
+      node.status,
+    ],
+  }))
+
+  const links = topology.value.edges.map(edge => ({
+    source: String(edge.source),
+    target: String(edge.target),
+    lineStyle: {
+      width: Math.max(1, Number(edge.quality || 60) / 25),
+      color: edge.active ? '#334155' : '#94a3b8',
+      opacity: edge.active ? 0.9 : 0.35,
+    },
+  }))
 
   chart.setOption({
     backgroundColor: 'transparent',
+    animationDuration: 300,
+    animationDurationUpdate: 300,
     tooltip: {
-      backgroundColor: '#18191a',
-      borderColor: '#23252a',
-      textStyle: { color: '#f7f8f8' },
-      formatter: (p) => {
-        if (p.dataType === 'node') {
-          const n = topology.value.nodes.find(x => x.name === p.name)
-          return n ? `${n.name}<br/>状态: ${n.status}<br/>电量: ${n.batteryPct?.toFixed(1)}%` : p.name
+      backgroundColor: '#111827',
+      borderColor: '#1f2937',
+      textStyle: { color: '#f8fafc' },
+      formatter: params => {
+        if (params.dataType === 'node') {
+          const [lat, lon, alt, batteryPct, rssi, status] = params.data.value || []
+          return `${params.data.name}<br/>状态: ${status}<br/>电量: ${batteryPct}%<br/>RSSI: ${rssi ?? '-'}<br/>位置: ${lat}, ${lon}<br/>高度: ${alt}m`
         }
-        return `${p.data.source} → ${p.data.target}`
-      }
+        return `${params.data.source} -> ${params.data.target}`
+      },
     },
     series: [{
       type: 'graph',
-      layout: 'force',
+      layout: 'none',
       roam: true,
-      force: { repulsion: 200, edgeLength: [120, 300], gravity: 0.1 },
-      label: { show: true, color: '#d0d6e0', fontSize: 11 },
-      lineStyle: { curveness: 0.15 },
+      draggable: true,
+      label: {
+        show: true,
+        color: '#dbe4ee',
+        fontSize: 11,
+      },
+      lineStyle: {
+        curveness: 0.12,
+      },
+      emphasis: {
+        focus: 'adjacency',
+        lineStyle: {
+          width: 4,
+          color: '#0b57d0',
+        },
+      },
       data: nodes,
-      links: links,
-      emphasis: { lineStyle: { width: 4, color: '#5e6ad2' } }
-    }]
-  }, true) // notMerge=false 用于更新数据
+      links,
+    }],
+  }, {
+    notMerge: false,
+    lazyUpdate: true,
+  })
 }
 
-// 获取拓扑数据
-async function fetchTopology() {
+function applyTopology(nextTopology) {
+  const normalized = nextTopology || { nodes: [], edges: [] }
+  const nextSignature = JSON.stringify(normalized)
+  if (nextSignature === topologySignature) {
+    return false
+  }
+  topology.value = normalized
+  topologySignature = nextSignature
+  return true
+}
+
+function mergeTopologyPayload(payload) {
+  if (!payload) {
+    return false
+  }
+
+  const nextEdges = Array.isArray(payload.edges) ? payload.edges : topology.value.edges
+  const incomingNodes = Array.isArray(payload.nodes) ? payload.nodes : []
+  const existingById = new Map(
+    (topology.value.nodes || []).map(node => [Number(node.droneId), node]),
+  )
+
+  let requiresFullFetch = false
+  for (const incomingNode of incomingNodes) {
+    const nodeId = Number(incomingNode.droneId)
+    if (!existingById.has(nodeId)) {
+      requiresFullFetch = true
+      break
+    }
+  }
+
+  if (requiresFullFetch) {
+    return false
+  }
+
+  const mergedNodes = (topology.value.nodes || []).map(node => {
+    const incoming = incomingNodes.find(item => Number(item.droneId) === Number(node.droneId))
+    return incoming ? { ...node, ...incoming } : node
+  })
+
+  return applyTopology({
+    nodes: mergedNodes,
+    edges: nextEdges,
+  })
+}
+
+async function fetchTopology(showLoading = true) {
   try {
-    loading.value = true
+    if (showLoading) {
+      loading.value = true
+    }
     const { data } = await api.get('/topology')
-    topology.value = data
-    await nextTick()
-    buildChart()
-  } catch (e) {
-    console.error('拓扑加载失败:', e)
+    if (applyTopology(data)) {
+      await nextTick()
+      buildChart()
+    }
+  } catch (error) {
+    console.error('加载拓扑失败:', error)
   } finally {
-    loading.value = false
+    if (showLoading) {
+      loading.value = false
+    }
   }
 }
 
-// WebSocket 实时拓扑更新
 function connectWS() {
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
   ws = new WebSocket(`${protocol}//${location.host}/ws/drones`)
 
-  ws.onmessage = (e) => {
+  ws.onmessage = event => {
     try {
-      const msg = JSON.parse(e.data)
+      const msg = JSON.parse(event.data)
       if (msg.type === 'topology_update') {
-        // 合并 WS 推送的拓扑数据（增量更新边，保留节点信息）
-        if (msg.payload) {
-          if (msg.payload.nodes) {
-            // 合并节点（WS 推送的节点信息较少，只更新存在变化的字段）
-            for (const newNode of msg.payload.nodes) {
-              const existing = topology.value.nodes.find(n => n.droneId === newNode.droneId)
-              if (existing) {
-                Object.assign(existing, newNode)
-              } else {
-                topology.value.nodes.push(newNode)
-              }
-            }
-          }
-          if (msg.payload.edges) {
-            topology.value.edges = msg.payload.edges
-          }
-          nextTick(() => buildChart())
+        if (topologyRefreshTimer) {
+          clearTimeout(topologyRefreshTimer)
         }
+        topologyRefreshTimer = window.setTimeout(() => {
+          if (mergeTopologyPayload(msg.payload)) {
+            buildChart()
+          } else {
+            fetchTopology(false)
+          }
+        }, 150)
       }
-    } catch (_) { /* ignore malformed */ }
+    } catch (_) {
+      // ignore malformed messages
+    }
   }
 
   ws.onclose = () => {
-    // 5 秒后重连
     setTimeout(connectWS, 5000)
   }
 }
-
-onMounted(async () => {
-  chart = echarts.init(chartRef.value)
-  await fetchTopology()
-  connectWS()
-
-  // 入场动画
-  const tl = createTimeline({ defaults: { duration: 500, ease: 'outExpo' } })
-  tl.add('.topo-title', { opacity: [0, 1], translateY: [-15, 0] })
-    .add('.topo-graph', { opacity: [0, 1], translateX: [-20, 0] }, '-=300')
-    .add('.topo-panel', { opacity: [0, 1], translateX: [20, 0] }, '-=400')
-
-  // 每 30 秒刷新拓扑
-  window._topoInterval = setInterval(fetchTopology, 30000)
-})
-
-onUnmounted(() => {
-  if (ws) ws.close()
-  if (window._topoInterval) clearInterval(window._topoInterval)
-  if (chart) chart.dispose()
-})
-
-// 窗口大小变化时重绘
-window.addEventListener('resize', () => chart?.resize())
 
 async function findRoute() {
   try {
     const { data } = await api.get(`/missions/route/${selectedDrone.value}`)
     routes.value = data
-  } catch (e) {
+  } catch (_) {
     routes.value = []
   }
 }
+
+function handleResize() {
+  chart?.resize()
+}
+
+onMounted(async () => {
+  chart = echarts.init(chartRef.value)
+  await fetchTopology(true)
+  connectWS()
+
+  const tl = createTimeline({ defaults: { duration: 500, ease: 'outExpo' } })
+  tl.add('.topo-title', { opacity: [0, 1], translateY: [-15, 0] })
+    .add('.topo-graph', { opacity: [0, 1], translateX: [-20, 0] }, '-=300')
+    .add('.topo-panel', { opacity: [0, 1], translateX: [20, 0] }, '-=400')
+
+  window.addEventListener('resize', handleResize)
+})
+
+onUnmounted(() => {
+  if (ws) {
+    ws.close()
+  }
+  if (topologyRefreshTimer) {
+    clearTimeout(topologyRefreshTimer)
+  }
+  window.removeEventListener('resize', handleResize)
+  chart?.dispose()
+})
 </script>
 
 <template>
@@ -166,33 +293,45 @@ async function findRoute() {
 
     <div class="flex gap-4">
       <div class="topo-graph flex-1 bg-surface-1 border border-hairline rounded-lg p-4 relative" style="opacity:0">
-        <div v-if="loading" class="absolute inset-0 flex items-center justify-center bg-surface-1/80 z-10 rounded-lg">
+        <div v-if="loading" class="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-surface-1/80">
           <span class="text-sm text-ink-muted">加载拓扑数据...</span>
         </div>
-        <div ref="chartRef" class="w-full h-[400px]"></div>
-        <p class="text-xs text-ink-subtle mt-2">
-          {{ topology.nodes.length }} 个节点，{{ topology.edges.length }} 条活跃链路
+        <div ref="chartRef" class="h-[400px] w-full"></div>
+        <p class="mt-2 text-xs text-ink-subtle">
+          {{ topology.nodes.length }} 个节点，{{ topology.edges.length }} 条活动链路
         </p>
       </div>
-      <div class="topo-panel w-[300px] bg-surface-1 border border-hairline rounded-lg p-4 space-y-4" style="opacity:0">
-        <h2 class="text-sm font-medium text-ink-muted">路径查询 (递归 CTE)</h2>
+
+      <div class="topo-panel w-[300px] space-y-4 rounded-lg border border-hairline bg-surface-1 p-4" style="opacity:0">
+        <h2 class="text-sm font-medium text-ink-muted">路径查询（递归 CTE）</h2>
         <div class="space-y-2">
           <label class="text-xs text-ink-subtle">源无人机 ID</label>
-          <input v-model.number="selectedDrone" type="number" min="1" max="7"
-            class="w-full h-9 px-3 bg-surface-2 border border-hairline rounded-md text-sm text-ink focus:outline-none focus:border-primary" />
-          <button @click="findRoute"
-            class="w-full h-9 bg-primary hover:bg-primary-hover text-white text-sm rounded-md cursor-pointer transition-colors">
-            查找到地面站路径
+          <input
+            v-model.number="selectedDrone"
+            type="number"
+            min="1"
+            class="h-9 w-full rounded-md border border-hairline bg-surface-2 px-3 text-sm text-ink focus:border-primary focus:outline-none"
+          />
+          <button
+            @click="findRoute"
+            class="h-9 w-full cursor-pointer rounded-md bg-primary text-sm text-white transition-colors hover:bg-primary-hover"
+          >
+            查询到地面站路径
           </button>
         </div>
+
         <div v-if="routes.length" class="space-y-2">
-          <p class="text-xs text-ink-subtle">找到 {{ routes.length }} 条路径:</p>
-          <div v-for="(r, i) in routes" :key="i"
-               class="p-2 bg-surface-2 rounded text-xs font-mono text-ink-muted">
-            {{ r.path }} ({{ r.hops }} 跳)
+          <p class="text-xs text-ink-subtle">找到 {{ routes.length }} 条路径</p>
+          <div
+            v-for="(route, index) in routes"
+            :key="index"
+            class="rounded bg-surface-2 p-2 font-mono text-xs text-ink-muted"
+          >
+            {{ route.path }} ({{ route.hops }} 跳)
           </div>
         </div>
-        <p v-else class="text-xs text-ink-subtle">点击查找按钮查询路径</p>
+
+        <p v-else class="text-xs text-ink-subtle">点击查询按钮后，这里会展示可达地面站的链路路径。</p>
       </div>
     </div>
   </div>

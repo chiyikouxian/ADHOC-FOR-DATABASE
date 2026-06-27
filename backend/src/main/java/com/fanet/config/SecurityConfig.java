@@ -38,6 +38,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/drones/**").permitAll()
                 .requestMatchers("/api/missions/**").permitAll()
                 .requestMatchers("/api/topology/**").permitAll()
+                .requestMatchers("/api/simulation/**").permitAll()
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
                 .anyRequest().authenticated())
             .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);

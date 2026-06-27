@@ -28,8 +28,48 @@ function Ensure-Java {
     }
 }
 
+function Stop-ExistingBackend {
+    $existing = Get-CimInstance Win32_Process |
+        Where-Object {
+            $_.Name -eq "java.exe" -and
+            $_.CommandLine -like "*fanet-platform-0.1.0-SNAPSHOT.jar*"
+        }
+
+    if (-not $existing) {
+        return
+    }
+
+    foreach ($proc in $existing) {
+        Write-Host "Stopping existing FANET backend process PID $($proc.ProcessId) ..." -ForegroundColor Yellow
+        Stop-Process -Id $proc.ProcessId -Force
+    }
+
+    Start-Sleep -Seconds 2
+}
+
+function Assert-PortAvailable {
+    $listeners = Get-NetTCPConnection -LocalPort $backendPort -State Listen -ErrorAction SilentlyContinue
+    if (-not $listeners) {
+        return
+    }
+
+    $pids = $listeners | Select-Object -ExpandProperty OwningProcess -Unique
+    $details = foreach ($pid in $pids) {
+        $proc = Get-CimInstance Win32_Process -Filter "ProcessId = $pid"
+        if ($proc) {
+            "$pid ($($proc.Name))"
+        } else {
+            "$pid"
+        }
+    }
+
+    throw "Port $backendPort is still in use by: $($details -join ', '). Please stop that process and try again."
+}
+
 Ensure-Java
 Ensure-Maven
+Stop-ExistingBackend
+Assert-PortAvailable
 
 Write-Host "Building FANET backend ..." -ForegroundColor Cyan
 Push-Location $backendDir

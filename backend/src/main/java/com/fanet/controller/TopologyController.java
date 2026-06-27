@@ -41,6 +41,7 @@ public class TopologyController {
             try (PreparedStatement ps = conn.prepareStatement(
                     "SELECT d.drone_id, d.serial_no, d.status, dl.battery_pct, dl.lat, dl.lon, dl.alt "
                     + "FROM drones d LEFT JOIN drone_latest dl ON dl.drone_id = d.drone_id "
+                    + "WHERE d.drone_id = 0 OR d.status <> 'offline' "
                     + "ORDER BY d.drone_id")) {
                 try (ResultSet rs = ps.executeQuery()) {
                     while (rs.next()) {

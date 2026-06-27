@@ -10,6 +10,7 @@ const routes = [
       { path: 'missions', name: 'Missions', component: () => import('../views/Missions.vue') },
       { path: 'telemetry', name: 'Telemetry', component: () => import('../views/Telemetry.vue') },
       { path: 'topology', name: 'Topology', component: () => import('../views/Topology.vue') },
+      { path: 'simulation', name: 'Simulation', component: () => import('../views/Simulation.vue') },
       { path: 'ai', name: 'Ai', component: () => import('../views/Ai.vue') },
       { path: 'alerts', name: 'Alerts', component: () => import('../views/Alerts.vue') },
     ]

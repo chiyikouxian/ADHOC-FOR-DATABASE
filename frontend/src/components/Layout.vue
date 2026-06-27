@@ -2,18 +2,19 @@
 import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../store/auth'
-import { animate, stagger, createTimeline } from '../composables/useAnime'
+import { stagger, createTimeline } from '../composables/useAnime'
 
 const router = useRouter()
 const auth = useAuthStore()
 
 const navItems = [
   { path: '/', label: '态势大屏', icon: '◉' },
-  { path: '/missions', label: '任务管理', icon: '▶' },
-  { path: '/telemetry', label: '遥测曲线', icon: '〜' },
-  { path: '/topology', label: '拓扑分析', icon: '⬡' },
-  { path: '/alerts', label: '告警中心', icon: '△' },
-  { path: '/ai', label: 'AI 问答', icon: '◇' },
+  { path: '/missions', label: '任务管理', icon: '▣' },
+  { path: '/telemetry', label: '遥测曲线', icon: '◌' },
+  { path: '/topology', label: '拓扑分析', icon: '⌘' },
+  { path: '/simulation', label: '无人机群模拟', icon: '◎' },
+  { path: '/alerts', label: '告警中心', icon: '▲' },
+  { path: '/ai', label: 'AI 分析', icon: '✦' },
 ]
 
 function logout() {
