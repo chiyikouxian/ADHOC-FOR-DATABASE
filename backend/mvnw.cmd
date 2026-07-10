@@ -20,7 +20,7 @@ for /f "delims=" %%f in ('dir /s /b "%MAVEN_HOME%\mvn.cmd" 2^>nul') do (
     goto :found
 )
 
-:: Not found — need to download
+:: Not found - need to download
 echo Maven not found locally. Downloading %DIST_URL% ...
 if not exist "%MAVEN_HOME%" mkdir "%MAVEN_HOME%"
 powershell -NoProfile -Command "Invoke-WebRequest -Uri '%DIST_URL%' -OutFile '%TEMP%\%ZIP_NAME%'"

@@ -103,7 +103,7 @@ function createEmptyDrone(droneNo = 1, lat = 31.23, lon = 121.47) {
   }
 }
 
-function createEmptyLink(srcDroneNo = 1, dstDroneNo = 0) {
+function createEmptyLink(srcDroneNo = 1, dstDroneNo = 2) {
   return {
     srcDroneNo,
     dstDroneNo,
@@ -148,7 +148,7 @@ function applyScenarioToForm(data) {
     })),
     links: (data.links || []).map(link => ({
       srcDroneNo: link.srcDroneNo ?? 1,
-      dstDroneNo: link.dstDroneNo ?? 0,
+      dstDroneNo: link.dstDroneNo >= 0 ? link.dstDroneNo : null,
       initialQuality: link.initialQuality ?? 80,
       isEnabled: link.isEnabled ?? true,
     })),
@@ -245,7 +245,11 @@ function buildPayload() {
         roleTag: drone.roleTag?.trim() || null,
       })),
     links: form.links
-      .filter(link => sanitizeNumber(link.srcDroneNo, 0) > 0 && link.dstDroneNo !== null && link.dstDroneNo !== '')
+      .filter(link => {
+        const src = sanitizeNumber(link.srcDroneNo, 0)
+        const dst = sanitizeNumber(link.dstDroneNo, 0)
+        return src > 0 && dst >= 0 && src !== dst
+      })
       .map(link => ({
         srcDroneNo: sanitizeNumber(link.srcDroneNo, 1),
         dstDroneNo: sanitizeNumber(link.dstDroneNo, 0),
@@ -269,8 +273,8 @@ function pruneOutOfRangeChildren(showNotice = false) {
     const src = sanitizeNumber(link.srcDroneNo, 0)
     const dst = sanitizeNumber(link.dstDroneNo, -1)
     const srcValid = src > 0 && src <= droneCount
-    const dstValid = dst === 0 || (dst > 0 && dst <= droneCount)
-    return srcValid && dstValid
+    const dstValid = dst >= 0 && dst <= droneCount
+    return srcValid && dstValid && src !== dst
   })
 
   const removedDrones = beforeDroneCount - form.drones.length
@@ -502,7 +506,12 @@ function generateDroneOverrides() {
 }
 
 function addLink() {
-  form.links.push(createEmptyLink(1, 0))
+  const count = Math.max(1, sanitizeNumber(form.droneCount, 1))
+  if (count < 2) {
+    showMessage('至少需要 2 个节点才能配置链路', 'info')
+    return
+  }
+  form.links.push(createEmptyLink(1, 2))
   renderChart()
 }
 
@@ -516,20 +525,17 @@ function generateLinksFromTopology() {
   const links = []
 
   if (form.topologyMode === 'chain') {
-    for (let droneNo = 1; droneNo <= count; droneNo += 1) {
-      links.push(createEmptyLink(droneNo, droneNo === 1 ? 0 : droneNo - 1))
+    for (let droneNo = 2; droneNo <= count; droneNo += 1) {
+      links.push(createEmptyLink(droneNo, droneNo - 1))
     }
   } else if (form.topologyMode === 'star') {
-    for (let droneNo = 1; droneNo <= count; droneNo += 1) {
-      links.push(createEmptyLink(droneNo, 0))
+    for (let droneNo = 2; droneNo <= count; droneNo += 1) {
+      links.push(createEmptyLink(droneNo, 1))
     }
   } else if (form.topologyMode === 'mesh') {
     for (let droneNo = 1; droneNo <= count; droneNo += 1) {
       for (let peer = droneNo + 1; peer <= Math.min(count, droneNo + 2); peer += 1) {
         links.push(createEmptyLink(droneNo, peer))
-      }
-      if (droneNo <= 2) {
-        links.push(createEmptyLink(droneNo, 0))
       }
     }
   } else {
@@ -539,6 +545,13 @@ function generateLinksFromTopology() {
 
   form.links = links
   renderChart()
+}
+
+function availableTargetNodes(link) {
+  const count = Math.max(1, sanitizeNumber(form.droneCount, 1))
+  const source = sanitizeNumber(link.srcDroneNo, 0)
+  return Array.from({ length: count }, (_, index) => index + 1)
+    .filter(droneNo => droneNo !== source)
 }
 
 function buildDraftPreview() {
@@ -555,8 +568,9 @@ function buildDraftPreview() {
         )
       })
 
+  const hasGroundStation = form.links.some(link => sanitizeNumber(link.dstDroneNo, -1) === 0)
   const nodes = [
-    {
+    ...(hasGroundStation ? [{
       droneNo: 0,
       name: '地面站',
       lat: centerLat,
@@ -564,7 +578,7 @@ function buildDraftPreview() {
       alt: 0,
       batteryPct: 100,
       rssi: 0,
-    },
+    }] : []),
     ...drones.map(drone => ({
       droneNo: sanitizeNumber(drone.droneNo, 1),
       name: drone.serialNo || `SN-${String(drone.droneNo).padStart(4, '0')}`,
@@ -1003,7 +1017,12 @@ const motionOptions = [
                   </label>
                   <label class="space-y-1">
                     <span class="text-xs text-ink-subtle">目标节点</span>
-                    <input v-model.number="link.dstDroneNo" type="number" min="0" class="w-full h-9 px-3 rounded-md border border-hairline bg-white/70 text-sm" />
+                    <select v-model.number="link.dstDroneNo" class="w-full h-9 px-3 rounded-md border border-hairline bg-white/70 text-sm">
+                      <option :value="0">地面站</option>
+                      <option v-for="droneNo in availableTargetNodes(link)" :key="droneNo" :value="droneNo">
+                        节点 {{ droneNo }}
+                      </option>
+                    </select>
                   </label>
                   <label class="space-y-1">
                     <span class="text-xs text-ink-subtle">初始质量</span>
@@ -1020,7 +1039,7 @@ const motionOptions = [
               </div>
             </div>
             <div class="px-4 pb-4 text-xs text-ink-subtle">
-              已配置 {{ linkOverrideCount }} 条链路，目标节点支持填写 `0` 表示连接地面站。
+              已配置 {{ linkOverrideCount }} 条链路，目标节点可选择已生成的无人机节点或地面站。
             </div>
           </div>
         </div>
@@ -1176,5 +1195,16 @@ const motionOptions = [
 
 .simulation-chart :deep(canvas) {
   pointer-events: none;
+}
+
+.simulation-page select {
+  background-color: #1e293b;
+  color: #f8fafc;
+  color-scheme: dark;
+}
+
+.simulation-page select option {
+  background-color: #1e293b;
+  color: #f8fafc;
 }
 </style>

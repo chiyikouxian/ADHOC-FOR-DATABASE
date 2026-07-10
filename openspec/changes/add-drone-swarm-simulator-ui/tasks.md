@@ -12,7 +12,7 @@
 - [x] 2.5 Decide whether nested drones/links are managed inline or through separate child endpoints
 
 ## 3. Simulator runtime integration
-- [ ] 3.1 Refactor the Node.js simulator so it can receive scenario parameters programmatically
+- [x] 3.1 Refactor the Node.js simulator so it can receive scenario parameters programmatically
 - [x] 3.2 Support a single active simulation session with adjustable parameters
 - [x] 3.3 Preserve MQTT telemetry and link publishing compatibility
 
@@ -24,7 +24,7 @@
 - [x] 4.5 Show runtime metrics such as drone count, interval, average battery, and active links
 
 ## 5. Verification
-- [ ] 5.1 Verify scenario CRUD end to end
-- [ ] 5.2 Verify runtime control affects the live simulation output
-- [ ] 5.3 Verify telemetry/topology pages still work with simulator-generated data
+- [x] 5.1 Verify scenario CRUD end to end
+- [x] 5.2 Verify runtime control affects the live simulation output
+- [x] 5.3 Verify telemetry/topology pages still work with simulator-generated data
 - [x] 5.4 Document demo value and CRUD coverage for the course report

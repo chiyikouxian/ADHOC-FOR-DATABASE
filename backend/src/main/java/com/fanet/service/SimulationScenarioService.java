@@ -164,10 +164,10 @@ public class SimulationScenarioService {
         scenario.setDrones(drones);
 
         List<SimulationScenarioLink> links = new java.util.ArrayList<>();
-        for (int i = 1; i <= 7; i++) {
+        for (int i = 2; i <= 7; i++) {
             SimulationScenarioLink link = new SimulationScenarioLink();
             link.setSrcDroneNo(i);
-            link.setDstDroneNo(i == 1 ? 0 : i - 1);
+            link.setDstDroneNo(i - 1);
             link.setInitialQuality(Math.max(55, 88 - i * 4));
             link.setIsEnabled(Boolean.TRUE);
             links.add(link);
@@ -244,6 +244,9 @@ public class SimulationScenarioService {
         }
         requirePositive(link.getSrcDroneNo(), "srcDroneNo");
         requireNonNull(link.getDstDroneNo(), "dstDroneNo");
+        if (link.getDstDroneNo() < 0) {
+            throw new IllegalArgumentException("dstDroneNo 不能小于 0");
+        }
         if (link.getSrcDroneNo() > droneCount || link.getDstDroneNo() > droneCount) {
             throw new IllegalArgumentException("link 节点编号超出 droneCount 范围");
         }

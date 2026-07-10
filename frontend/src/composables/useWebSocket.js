@@ -7,7 +7,11 @@ export function useWebSocket(path) {
   let reconnectTimer = null
 
   function connect() {
-    const url = `ws://${window.location.host}${path}`
+    const token = localStorage.getItem('token')
+    if (!token) return
+    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
+    const separator = path.includes('?') ? '&' : '?'
+    const url = `${protocol}://${window.location.host}${path}${separator}token=${encodeURIComponent(token)}`
     ws = new WebSocket(url)
 
     ws.onopen = () => {

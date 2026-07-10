@@ -1,6 +1,9 @@
 package com.fanet.config;
 
 import com.fanet.security.JwtFilter;
+import com.fanet.security.JwtAuthenticationEntryPoint;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpMethod;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -16,9 +19,11 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     private final JwtFilter jwtFilter;
+    private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
 
-    public SecurityConfig(JwtFilter jwtFilter) {
+    public SecurityConfig(JwtFilter jwtFilter, JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint) {
         this.jwtFilter = jwtFilter;
+        this.jwtAuthenticationEntryPoint = jwtAuthenticationEntryPoint;
     }
 
     @Bean
@@ -26,20 +31,20 @@ public class SecurityConfig {
         http
             .csrf(csrf -> csrf.disable())
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .exceptionHandling(ex -> ex
+                .authenticationEntryPoint(jwtAuthenticationEntryPoint)
+                .accessDeniedHandler((request, response, accessDeniedException) ->
+                    response.sendError(HttpStatus.FORBIDDEN.value())))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/auth/**").permitAll()
                 .requestMatchers("/api/health").permitAll()
-                .requestMatchers("/api/telemetry/**").permitAll()
-                .requestMatchers("/api/ai/**").permitAll()
-                .requestMatchers("/api/alerts/**").permitAll()
-                .requestMatchers("/api/explain/**").permitAll()
-                .requestMatchers("/api/bench/**").permitAll()
                 .requestMatchers("/ws/**").permitAll()
-                .requestMatchers("/api/drones/**").permitAll()
-                .requestMatchers("/api/missions/**").permitAll()
-                .requestMatchers("/api/topology/**").permitAll()
-                .requestMatchers("/api/simulation/**").permitAll()
-                .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                .requestMatchers(HttpMethod.POST, "/api/telemetry").hasRole("ADMIN")
+                .requestMatchers(HttpMethod.GET, "/api/telemetry/**").hasAnyRole("ADMIN", "OPERATOR")
+                .requestMatchers("/api/ai/**", "/api/alerts/**", "/api/missions/**", "/api/drones/**", "/api/topology/**")
+                    .hasAnyRole("ADMIN", "OPERATOR")
+                .requestMatchers("/api/explain/**", "/api/bench/**", "/api/simulation/**", "/api/admin/**")
+                    .hasRole("ADMIN")
                 .anyRequest().authenticated())
             .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();

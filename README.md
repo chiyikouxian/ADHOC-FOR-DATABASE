@@ -45,6 +45,8 @@ docker exec -i fanet-tdengine taos -f /tmp/schema_tdengine.sql
 2. 启动后端
 
 ```powershell
+Copy-Item .env.example .env
+# 编辑 .env，设置一个至少 32 字节的 JWT_SECRET
 cd backend
 .\start.bat
 ```
@@ -64,6 +66,16 @@ cd simulator
 npm install
 node simulator-mqtt.js
 ```
+
+### 可控 MQTT 模拟器
+
+`simulator-mqtt.js` 保持上面的命令行启动方式，并订阅 `fanet/simulator/control`，可在运行中接收 JSON 控制消息：
+
+```json
+{"command":"apply","params":{"publishIntervalMs":500,"motionMode":"orbit"}}
+```
+
+支持 `start`、`stop`、`apply`、`status`。启动时设置 `SIM_AUTOSTART=false` 可等待 `start` 指令；运行状态会保留发布到 `fanet/simulator/status`。
 
 ## 快速验收
 

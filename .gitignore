@@ -32,3 +32,4 @@ docker-data/
 # ---- 压测 / 临时产物 ----
 *.jtl
 /tmp/
+backend/fanet-backend-*/

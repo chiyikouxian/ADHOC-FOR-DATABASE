@@ -23,6 +23,9 @@ public class MissionService {
         if (locked == null) {
             return Map.of("success", false, "reason", "无人机不存在或非空闲状态");
         }
+        if (!"idle".equalsIgnoreCase(String.valueOf(locked.get("status")))) {
+            return Map.of("success", false, "reason", "无人机不存在或非空闲状态");
+        }
 
         Double battery = ((Number) locked.get("battery")).doubleValue();
         if (battery < 20.0) {

@@ -159,6 +159,18 @@ public class SimulationRuntimeService {
         }
 
         List<Map<String, Object>> edges = buildPreviewEdges(activeSession);
+        boolean hasGroundStation = edges.stream().anyMatch(edge -> Integer.valueOf(0).equals(edge.get("target")));
+        if (hasGroundStation) {
+            Map<String, Object> groundStation = new LinkedHashMap<>();
+            groundStation.put("droneNo", 0);
+            groundStation.put("name", "地面站");
+            groundStation.put("lat", round(activeSession.areaCenterLat, 6));
+            groundStation.put("lon", round(activeSession.areaCenterLon, 6));
+            groundStation.put("alt", 0);
+            groundStation.put("batteryPct", 100);
+            groundStation.put("rssi", 0);
+            nodes.add(groundStation);
+        }
         Map<String, Object> metrics = new LinkedHashMap<>(buildStatus(activeSession));
 
         return Map.of(
@@ -255,6 +267,10 @@ public class SimulationRuntimeService {
         List<RuntimeLink> links = new ArrayList<>();
         if (!session.customLinks.isEmpty()) {
             for (SimulationScenarioLink link : session.customLinks) {
+                if (link.getSrcDroneNo() == null || link.getDstDroneNo() == null
+                        || link.getSrcDroneNo() <= 0 || link.getDstDroneNo() < 0) {
+                    continue;
+                }
                 RuntimeLink edge = new RuntimeLink();
                 edge.src = link.getSrcDroneNo();
                 edge.dst = link.getDstDroneNo();
@@ -266,8 +282,8 @@ public class SimulationRuntimeService {
         }
 
         if ("star".equals(session.topologyMode)) {
-            for (RuntimeDrone drone : session.runtimeDrones) {
-                links.add(runtimeLink(drone.droneNo, 0, 78));
+            for (int i = 1; i < session.runtimeDrones.size(); i++) {
+                links.add(runtimeLink(session.runtimeDrones.get(i).droneNo, session.runtimeDrones.get(0).droneNo, 78));
             }
             return links;
         }
@@ -282,7 +298,6 @@ public class SimulationRuntimeService {
         }
 
         if (!session.runtimeDrones.isEmpty()) {
-            links.add(runtimeLink(session.runtimeDrones.get(0).droneNo, 0, 82));
             for (int i = 1; i < session.runtimeDrones.size(); i++) {
                 links.add(runtimeLink(session.runtimeDrones.get(i).droneNo, session.runtimeDrones.get(i - 1).droneNo, 76));
             }

@@ -9,6 +9,12 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -75,6 +81,39 @@ class MissionServiceTest {
     }
 
     @Test
+    void allowsOnlyOneConcurrentAssignmentForTheSameDrone() throws Exception {
+        AtomicBoolean claimed = new AtomicBoolean(false);
+        when(missionMapper.lockDroneForAssign(8)).thenAnswer(invocation -> {
+            if (claimed.compareAndSet(false, true)) {
+                return Map.of("drone_id", 8, "status", "idle", "battery", 80.0);
+            }
+            return Map.of("drone_id", 8, "status", "assigned", "battery", 80.0);
+        });
+
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<Map<String, Object>> first = executor.submit(() -> attemptAssignment(ready, start));
+            Future<Map<String, Object>> second = executor.submit(() -> attemptAssignment(ready, start));
+            assertTrue(ready.await(2, TimeUnit.SECONDS));
+            start.countDown();
+
+            Map<String, Object> firstResult = first.get(2, TimeUnit.SECONDS);
+            Map<String, Object> secondResult = second.get(2, TimeUnit.SECONDS);
+            long successes = List.of(firstResult, secondResult).stream()
+                    .filter(result -> Boolean.TRUE.equals(result.get("success")))
+                    .count();
+
+            assertEquals(1, successes);
+            verify(missionMapper).assignDrone(8);
+            verify(missionMapper).insertAssignment(11L, 8);
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
     void delegatesRouteRankingAndMissionListQueries() {
         List<Map<String, Object>> routes = List.of(Map.of("path", "4->3->1->0", "hops", 3));
         List<Map<String, Object>> ranking = List.of(Map.of("drone_id", 1, "rank", 1));
@@ -87,5 +126,11 @@ class MissionServiceTest {
         assertSame(routes, missionService.findRoute(4));
         assertSame(ranking, missionService.missionRanking());
         assertSame(missions, missionService.listMissions());
+    }
+
+    private Map<String, Object> attemptAssignment(CountDownLatch ready, CountDownLatch start) throws Exception {
+        ready.countDown();
+        assertTrue(start.await(2, TimeUnit.SECONDS));
+        return missionService.assignDroneToMission(11L, 8);
     }
 }

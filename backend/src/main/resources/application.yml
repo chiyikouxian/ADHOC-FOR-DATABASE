@@ -40,12 +40,12 @@ datasource:
 # ---------- LLM / NL2SQL ----------
 llm:
   api-base: ${LLM_API_BASE:https://api.deepseek.com}
-  api-key: ${LLM_API_KEY:your-deepseek-api-key}
+  api-key: ${LLM_API_KEY:}
   model: ${LLM_MODEL:deepseek-chat}
 
 # ---------- JWT ----------
 jwt:
-  secret: ${JWT_SECRET:dev-only-secret-change-in-prod-32chars!}
+  secret: ${JWT_SECRET:}
   expiration-ms: 86400000  # 24h
 
 # ---------- MyBatis ----------

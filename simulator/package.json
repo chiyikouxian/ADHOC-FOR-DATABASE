@@ -1,6 +1,11 @@
 {
   "name": "fanet-simulator",
   "private": true,
+  "scripts": {
+    "start": "node simulator-mqtt.js",
+    "check": "node --check simulator-mqtt.js",
+    "test": "node simulator-mqtt.test.js"
+  },
   "dependencies": {
     "mqtt": "^5.0.0"
   }
