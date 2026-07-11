@@ -9,6 +9,8 @@
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://127.0.0.1:18080';
 const MQTT_HOST = process.env.MQTT_HOST || 'mqtt://127.0.0.1:1883';
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'password';
 
 const args = process.argv.slice(2);
 const MODE_MQTT = args.includes('--mqtt');
@@ -52,31 +54,91 @@ function calcPercentile(sorted, pct) {
   return sorted[Math.floor(sorted.length * pct)] || sorted[sorted.length - 1];
 }
 
-async function runStageHttp(drones) {
+async function getAdminToken() {
+  let response;
+  try {
+    response = await fetch(`${BACKEND_URL}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD }),
+    });
+  } catch (error) {
+    throw new Error(`Unable to reach login endpoint: ${error.message}`);
+  }
+
+  const body = await response.text();
+  let payload;
+  try {
+    payload = body ? JSON.parse(body) : {};
+  } catch {
+    payload = {};
+  }
+
+  if (!response.ok || !payload.token) {
+    throw new Error(`Administrator login failed (${response.status}): ${body || '<empty response>'}`);
+  }
+  if (payload.role !== 'admin') {
+    throw new Error(`Administrator login returned unexpected role: ${payload.role || '<missing>'}`);
+  }
+  return payload.token;
+}
+
+function failureFromResponse(response, body) {
+  return {
+    type: 'http',
+    status: response.status,
+    statusText: response.statusText,
+    body: body || '<empty response>',
+  };
+}
+
+function failureFromError(error) {
+  return { type: 'network', message: error.message };
+}
+
+function logFirstFailure(label, result) {
+  console.log(`  ${label} first failure: ${result.firstFailure === '-' ? 'none' : result.firstFailure}`);
+}
+
+async function postRecords(path, records, token) {
+  const response = await fetch(`${BACKEND_URL}${path}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(records),
+  });
+  const body = response.ok ? '' : await response.text();
+  return { response, body };
+}
+
+async function runStageHttp(drones, token) {
   console.log(`\n=== ${drones} drones (HTTP) ===`);
-  let count = 0;
-  let errors = 0;
+  let requests = 0;
+  let successes = 0;
+  let firstFailure = null;
   const latencies = [];
   const start = Date.now();
 
   while (Date.now() - start < DURATION) {
     const records = genRecords(drones);
     const t0 = Date.now();
+    requests++;
     try {
-      const res = await fetch(`${BACKEND_URL}/api/telemetry`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(records),
-      });
-      if (!res.ok) errors++;
-      latencies.push(Date.now() - t0);
-      count++;
-    } catch (e) {
-      errors++;
+      const { response, body } = await postRecords('/api/telemetry', records, token);
+      if (response.ok) {
+        successes++;
+        latencies.push(Date.now() - t0);
+      } else if (!firstFailure) {
+        firstFailure = failureFromResponse(response, body);
+      }
+    } catch (error) {
+      if (!firstFailure) firstFailure = failureFromError(error);
     }
   }
 
-  return buildResult(drones, count, errors, latencies, start);
+  return buildResult(drones, requests, successes, latencies, start, firstFailure);
 }
 
 async function runStageMqtt(drones) {
@@ -92,7 +154,7 @@ async function runStageMqtt(drones) {
         if (Date.now() - start >= DURATION) {
           clearInterval(interval);
           client.end();
-          resolve(buildResult(drones, count, errors, latencies, start));
+          resolve(buildResult(drones, count, count - errors, latencies, start, null));
           return;
         }
 
@@ -110,9 +172,10 @@ async function runStageMqtt(drones) {
   });
 }
 
-async function runComparePath(drones, path, label) {
-  let count = 0;
-  let errors = 0;
+async function runComparePath(drones, path, label, token) {
+  let requests = 0;
+  let successes = 0;
+  let firstFailure = null;
   const latencies = [];
   const start = Date.now();
 
@@ -120,51 +183,57 @@ async function runComparePath(drones, path, label) {
   while (Date.now() - start < DURATION) {
     const records = genRecords(drones);
     const t0 = Date.now();
+    requests++;
     try {
-      const res = await fetch(`${BACKEND_URL}${path}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(records),
-      });
-      if (!res.ok) errors++;
-      latencies.push(Date.now() - t0);
-      count++;
-    } catch (e) {
-      errors++;
+      const { response, body } = await postRecords(path, records, token);
+      if (response.ok) {
+        successes++;
+        latencies.push(Date.now() - t0);
+      } else if (!firstFailure) {
+        firstFailure = failureFromResponse(response, body);
+      }
+    } catch (error) {
+      if (!firstFailure) firstFailure = failureFromError(error);
     }
   }
 
-  return buildResult(drones, count, errors, latencies, start);
+  return buildResult(drones, requests, successes, latencies, start, firstFailure);
 }
 
-async function runCompareStage(drones) {
+async function runCompareStage(drones, token) {
   console.log(`\n=== ${drones} drones compare ===`);
 
-  const pgResult = await runComparePath(drones, '/api/bench/pg-insert', 'PG only path');
+  const pgResult = await runComparePath(drones, '/api/bench/pg-insert', 'PG only path', token);
   await sleep(3000);
-  const tdResult = await runComparePath(drones, '/api/bench/td-insert', 'TDengine only path');
+  const tdResult = await runComparePath(drones, '/api/bench/td-insert', 'TDengine only path', token);
 
-  console.log(`  PG: TPS=${pgResult.tps} P95=${pgResult.p95} err=${pgResult.errors}`);
-  console.log(`  TD: TPS=${tdResult.tps} P95=${tdResult.p95} err=${tdResult.errors}`);
+  console.log(`  PG: TPS=${pgResult.tps} P95=${pgResult.p95} errors=${pgResult.errors}`);
+  console.log(`  TD: TPS=${tdResult.tps} P95=${tdResult.p95} errors=${tdResult.errors}`);
+  logFirstFailure('PG', pgResult);
+  logFirstFailure('TD', tdResult);
   const ratio = (Number(tdResult.tps) / Math.max(1, Number(pgResult.tps)) * 100).toFixed(0);
   console.log(`  TD/PG = ${ratio}%`);
 
   return { pg: pgResult, td: tdResult, drones, tdPgRatio: ratio + '%' };
 }
 
-function buildResult(drones, count, errors, latencies, start) {
+function buildResult(drones, requests, successes, latencies, start, firstFailure) {
   const elapsed = (Date.now() - start) / 1000;
   const sorted = [...latencies].sort((a, b) => a - b);
+  const errors = Math.max(0, requests - successes);
+  const errorRate = requests === 0 ? 0 : Math.min(100, Math.max(0, errors / requests * 100));
   return {
     drones,
-    requests: count,
+    requests,
+    successes,
     elapsedSec: elapsed.toFixed(1),
-    tps: (count / elapsed).toFixed(1),
+    tps: (successes / elapsed).toFixed(1),
     p50: calcPercentile(sorted, 0.50) + 'ms',
     p95: calcPercentile(sorted, 0.95) + 'ms',
     p99: calcPercentile(sorted, 0.99) + 'ms',
     errors,
-    errorRate: count > 0 ? (errors / count * 100).toFixed(1) + '%' : '0%',
+    errorRate: errorRate.toFixed(1) + '%',
+    firstFailure: firstFailure ? JSON.stringify(firstFailure) : '-',
   };
 }
 
@@ -172,15 +241,22 @@ async function main() {
   console.log('FANET load test\n');
   console.log(`Stages: ${STAGES.join(' -> ')} drones, ${DURATION / 1000}s each\n`);
 
+  let token = null;
+  if (!MODE_MQTT) {
+    token = await getAdminToken();
+    console.log(`[Auth] Logged in as ${ADMIN_USERNAME} with administrator JWT`);
+  }
+
   const results = [];
   for (const n of STAGES) {
     let result;
     if (MODE_COMPARE) {
-      result = await runCompareStage(n);
+      result = await runCompareStage(n, token);
     } else if (MODE_MQTT) {
       result = await runStageMqtt(n);
     } else {
-      result = await runStageHttp(n);
+      result = await runStageHttp(n, token);
+      logFirstFailure('HTTP', result);
     }
     results.push(result);
     await sleep(5000);
@@ -203,6 +279,8 @@ async function main() {
       'TD/PG': r.tdPgRatio,
       PG_P95: r.pg.p95,
       TD_P95: r.td.p95,
+      PG_errors: r.pg.errors,
+      TD_errors: r.td.errors,
     })));
     console.log('\nConclusion: compare mode now measures two distinct write paths instead of hitting the same API twice.');
   } else {
