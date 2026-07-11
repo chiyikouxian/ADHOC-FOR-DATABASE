@@ -103,13 +103,3 @@ curl -X POST http://127.0.0.1:18080/api/ai/endurance -H "Content-Type: applicati
 - 500 架：PG `52.5 TPS`，TD `106.4 TPS`
 
 结论：在高频遥测写入场景下，TDengine-only 写入路径整体优于 PostgreSQL-only 写入路径，且负载越高差距越明显。
-
-## 提交建议
-
-课程提交时建议附带以下内容：
-
-- 源码仓库压缩包
-- 数据库设计与项目报告
-- 3 分钟演示视频
-- 本仓库内的 [DEMO.md](DEMO.md) 演示脚本
-- 若数据库已提前初始化且出现历史乱码，可执行 [db/fix_runtime_text.sql](db/fix_runtime_text.sql)

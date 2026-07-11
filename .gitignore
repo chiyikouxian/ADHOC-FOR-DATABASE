@@ -33,3 +33,6 @@ docker-data/
 *.jtl
 /tmp/
 backend/fanet-backend-*/
+
+# ---- Python ----
+__pycache__/
